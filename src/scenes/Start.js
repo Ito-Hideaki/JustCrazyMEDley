@@ -14,17 +14,30 @@ export class Start extends Phaser.Scene {
     }
     create() {
         this.background = this.add.tileSprite(640, 360, 1280, 720, 'background');//背景を配置
-        this.ground1 = this.add.image(640, 900, 'ground1');//地面を配置
+        this.groundHeight = 100;
+        this.groundY = this.scale.height - this.groundHeight;
+        this.ground1 = this.add.tileSprite(
+            this.scale.width / 2,
+            this.groundY + this.groundHeight / 2,
+            this.scale.width,
+            this.groundHeight,
+            'ground1'
+        );//地面を配置
+        this.add.rectangle(this.scale.width / 2, this.groundY, this.scale.width, 6, 0x75c645)
+            .setOrigin(0.5, 0);//地面の境界
+        this.stageSpeed = 450;
+
         this.tangye = this.add.image(1280, 590, 'tangye');//タン・イーを配置
         this.tangye.setScale(0.3);//タン・イーのサイズを調整
 
         this.logo = this.add.image(640, 200, 'logo');//ロゴを配置
         this.logo.setScale(0.5);//ロゴのサイズを調整
 
-        this.character1 = this.add.sprite(640, 540, 'character1');//J（主人公）を配置
+        this.character1 = this.add.sprite(220, 0, 'character1');//J（主人公）を配置
         this.character1.setScale(0.8);//J（主人公）のサイズを調整
+        this.character1BaseY = this.groundY - this.character1.displayHeight / 2;
+        this.character1.y = this.character1BaseY;
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);//スペースキーの挙動を監視
-        this.character1BaseY = this.character1.y;//J（主人公）のY軸
         this.character1VelocityY = 0;//J（主人公）のY軸速度
         this.isGrounded = true;//J（主人公）が地面にいるかどうか
 
@@ -39,6 +52,7 @@ export class Start extends Phaser.Scene {
 
         const deltaSeconds = delta / 1000;//デルタタイムを秒に変換
         this.hasCollectedTangye = false;//タン・イーを収集したかどうかのフラグ
+        this.ground1.tilePositionX += this.stageSpeed * deltaSeconds;//地面をスクロール
 
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.isGrounded) {//スペースキーが押され、かつ地面にいる場合
             this.character1VelocityY = -this.jumpSpeed;//ジャンプ速度を設定
@@ -54,7 +68,7 @@ export class Start extends Phaser.Scene {
             this.isGrounded = true;//地面にいることを示す
         }
 
-        this.tangye.x -= 450 * deltaSeconds;//タン・イーを左に移動 
+        this.tangye.x -= this.stageSpeed * deltaSeconds;//タン・イーを左に移動
         this.tangye.angle -= 10  ;//タン・イーの角度を更新
         this.tangye.setAngle(this.tangye.angle);
          
