@@ -50,14 +50,15 @@ export class Start extends Phaser.Scene {
 
         if (this.character1.y >= this.character1BaseY) {//地面に着地した場合
             this.character1.y = this.character1BaseY;//Y軸を地面の位置に固定
-            this.character1VelocityY = 0;//Y軸速度をリセット
+            this.character1VelocityY = 0;//Y軸速度をリセッな
             this.isGrounded = true;//地面にいることを示す
         }
 
-        this.tangye.x -= 400 * deltaSeconds;//タン・イーを左に移動 
-        if (this.tangye.x < -this.tangye.width * this.tangye.scaleX / 2) {//画面外に出た場合
-            this.tangye.x = 1280 + this.tangye.width * this.tangye.scaleX / 2;//右端に再配置
-        }
+        this.tangye.x -= 450 * deltaSeconds;//タン・イーを左に移動 
+        this.tangye.angle -= 10  ;//タン・イーの角度を更新
+        this.tangye.setAngle(this.tangye.angle);
+         
+        
 
         if(!this.hasCollectedTangye){
             const isCollinding = Phaser.Geom.Intersects.RectangleToRectangle(
@@ -67,8 +68,11 @@ export class Start extends Phaser.Scene {
 
             if(isCollinding) {//J（主人公）とタン・イーが衝突した場合
                 this.hasCollectedTangye = true;//タン・イーを収集したことを示す
-                this.tangye.destroy();//タン・イーを非表示にする
+                this.tangye.destroy();//タン・イーを非表示にする  
             }
+        }
+        if (this.tangye.x < -this.tangye.width * this.tangye.scaleX / 2 ) {//画面外に出た場合
+            this.tangye.x = 1280 + this.tangye.width * this.tangye.scaleX / 2;//右端に再配置
         }
     }
     
