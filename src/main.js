@@ -1,4 +1,9 @@
+import { Home } from './scenes/home.js';
+import { Mechanical } from './scenes/Mechanical.js';
+import { Electrical } from './scenes/Electrical.js';
 import { Denshi } from './scenes/Denshi.js';
+import { Joho } from './scenes/Joho.js';
+import { Chemical } from './scenes/Chemical.js';
 
 const config = {
     type: Phaser.AUTO,
@@ -10,7 +15,12 @@ const config = {
     backgroundColor: '#000000',
     pixelArt: false,
     scene: [
-        Denshi
+        Home,
+        Mechanical,
+        Electrical,
+        Denshi,
+        Joho,
+        Chemical
     ],
     scale: {
         mode: Phaser.Scale.FIT,

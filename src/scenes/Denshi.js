@@ -9,12 +9,12 @@ export class Denshi extends Phaser.Scene {
     preload() {
         this.load.image('background', 'assets/back1.png');//背景
         this.load.image('ground1', 'assets/ground1.png');//地面（チョコ）
-        this.load.image('characterStand', 'assets/D-stand.png');//J（主人公）
-        this.load.image('characterDamage', 'assets/D-damage.png');//J（主人公）
-        this.load.image('characterRun1', 'assets/D-run-1.png');//J（主人公）
-        this.load.image('characterRun2', 'assets/D-run-2.png');//J（主人公）
-        this.load.image('characterRun3', 'assets/D-run-3.png');//J（主人公）
-        this.load.image('characterRun4', 'assets/D-run-4.png');//J（主人公）
+        this.load.image('DenshicharacterStand', 'assets/D-stand.png');//J（主人公）
+        this.load.image('DenshicharacterDamage', 'assets/D-damage.png');//J（主人公）
+        this.load.image('DenshicharacterRun1', 'assets/D-run-1.png');//J（主人公）
+        this.load.image('DenshicharacterRun2', 'assets/D-run-2.png');//J（主人公）
+        this.load.image('DenshicharacterRun3', 'assets/D-run-3.png');//J（主人公）
+        this.load.image('DenshicharacterRun4', 'assets/D-run-4.png');//J（主人公）
         this.load.image('tangye', 'assets/tangye.png');//タン・イー
         this.load.image('Akaten', 'assets/Akaten.png');//赤点
         this.load.image('Aoten', 'assets/Aoten.png');//青点
@@ -23,6 +23,8 @@ export class Denshi extends Phaser.Scene {
     }
 
     create() {
+        this.cameras.main.fadeIn(1000, 0, 0, 0);//Homeからの暗転から明るくする
+        this.isLeaving = false;//ステージの右端から出ていく最中かどうか
         // 背景と地面
         this.background = this.add.tileSprite(640, 360, 1280, 720, 'background');//背景を配置
         this.groundHeight = 100;
@@ -83,14 +85,14 @@ export class Denshi extends Phaser.Scene {
         }).setScrollFactor(0).setDepth(100);
 
         // プレイヤー
-        this.characterStand = this.add.sprite(220, 0, 'characterStand');//J（主人公）を配置
+        this.characterStand = this.add.sprite(220, 0, 'DenshicharacterStand');//J（主人公）を配置
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
         this.characterStandBaseY = this.groundY - this.characterStand.displayHeight / 2;
         this.characterStand.y = this.characterStandBaseY;
-        if (!this.anims.exists('JRun')) {
+        if (!this.anims.exists('DenshiRun')) {
             this.anims.create({
-                key: 'JRun',
-                frames: ['characterRun1', 'characterRun2', 'characterRun3', 'characterRun4'].map(key => ({ key })),
+                key: 'DenshiRun',
+                frames: ['DenshicharacterRun1', 'DenshicharacterRun2', 'DenshicharacterRun3', 'DenshicharacterRun4'].map(key => ({ key })),
                 frameRate: 10,
                 repeat: -1
             });
@@ -175,7 +177,15 @@ export class Denshi extends Phaser.Scene {
             return;
         }
         const deltaSeconds = delta / 1000;//デルタタイムを秒に変換
+        if (this.isLeaving) {
+            // 出ていく最中は操作を受け付けず、右へ歩き続ける
+            this.characterStand.x += this.moveSpeed * deltaSeconds;
+            return;
+        }
         this.run(deltaSeconds);
+        if (this.characterStand.x > this.worldWidth) {
+            this.leaveStage();
+        }
 
         // ジャンプ入力
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.isGrounded) {//スペースキーが押され、かつ地面にいる場合
@@ -357,6 +367,15 @@ export class Denshi extends Phaser.Scene {
         return encodeSaveData(this.saveData);
     }
 
+    // ステージの右端から出て、1秒かけて暗転しHomeへ戻る
+    leaveStage() {
+        this.isLeaving = true;
+        this.cameras.main.fadeOut(1000, 0, 0, 0);
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            this.scene.start('Home', { fromStage: true });
+        });
+    }
+
     run(deltaSeconds) {
         let direction = 0;
         if (this.cursors.right.isDown) {
@@ -369,17 +388,17 @@ export class Denshi extends Phaser.Scene {
             this.characterStand.x += direction * this.moveSpeed * deltaSeconds;
             this.characterStand.setFlipX(direction < 0);
             if (!this.characterStand.anims.isPlaying) {
-                this.characterStand.play('JRun');
+                this.characterStand.play('DenshiRun');
             }
         } else {
             this.characterStand.anims.stop();
-            this.characterStand.setTexture('characterStand');
+            this.characterStand.setTexture('DenshicharacterStand');
         }
 
         this.characterStand.x = Phaser.Math.Clamp(
             this.characterStand.x,
             this.characterStand.displayWidth / 2,
-            this.worldWidth - this.characterStand.displayWidth / 2
+            Infinity//右端は制限しない（超えたらステージを出る）
         );
     }
 }
