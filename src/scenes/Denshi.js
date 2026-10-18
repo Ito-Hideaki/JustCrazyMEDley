@@ -37,7 +37,7 @@ export class Denshi extends Phaser.Scene {
         this.ground1.setScrollFactor(0);
 
         // ワールドと操作・物理設定
-        this.worldWidth = 19200;
+        this.worldWidth = 12800;
         this.moveSpeed = 400;
         this.cursors = this.input.keyboard.createCursorKeys();
         this.gravity = 1000;//重力
