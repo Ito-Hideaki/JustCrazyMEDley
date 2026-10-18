@@ -1,4 +1,4 @@
-import { Start } from './scenes/Start.js';
+import { Joho } from './scenes/joho.js';
 
 const config = {
     type: Phaser.AUTO,
@@ -10,7 +10,7 @@ const config = {
     backgroundColor: '#000000',
     pixelArt: false,
     scene: [
-        Start
+        Joho
     ],
     scale: {
         mode: Phaser.Scale.FIT,

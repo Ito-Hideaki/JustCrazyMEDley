@@ -1,4 +1,4 @@
-export class Start extends Phaser.Scene {
+﻿export class Start extends Phaser.Scene {
 
     constructor() {
         super('Start');
@@ -42,9 +42,7 @@ export class Start extends Phaser.Scene {
 
         // 収集アイテム
         this.tangye = this.add.image(1500,  590, 'tangye');//タン・イーを配置
-        this.tangye2 = this.add.image(18900,  590, 'tangye');//タン・イー2を配置
         this.tangye.setScale(0.3);//タン・イーのサイズを調整
-        this.tangye2.setScale(0.3);//タン・イー2のサイズを調整
 
         // プレイヤー
         this.character1 = this.add.sprite(220, 0, 'character1');//J（主人公）を配置
@@ -66,6 +64,11 @@ export class Start extends Phaser.Scene {
         const deltaSeconds = delta / 1000;//デルタタイムを秒に変換
         this.hasCollectedTangye = false;//タン・イーを収集したかどうかのフラグ
         this.hasCollectedTangye2 = false;//タン・イー2を収集したかどうかのフラグ
+        this.isTutorialOpen = false;
+
+        if(this.isTutorialOpen) {
+            return;
+        }
 
         // 左右移動
         if (this.cursors.right.isDown) {
@@ -139,17 +142,6 @@ export class Start extends Phaser.Scene {
             if(isCollinding) {//J（主人公）とタン・イーが衝突した場合
                 this.hasCollectedTangye = true;//タン・イーを収集したことを示す
                 this.tangye.destroy();//タン・イーを非表示にする
-            }
-        }
-        if(!this.hasCollectedTangye2){
-            const isCollinding = Phaser.Geom.Intersects.RectangleToRectangle(
-                this.character1.getBounds(),
-                this.tangye2.getBounds()
-            );//J（主人公）とタン・イー2の衝突判定
-
-            if(isCollinding) {//J（主人公）とタン・イー2が衝突した場合
-                this.hasCollectedTangye2 = true;//タン・イー2を収集したことを示す
-                this.tangye2.destroy();//タン・イー2を非表示にする
             }
         }
 
