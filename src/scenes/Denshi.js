@@ -1,13 +1,12 @@
-export class Start extends Phaser.Scene {
+export class Denshi extends Phaser.Scene {
 
     constructor() {
-        super('Joho');
+        super('Denshi');
     }
 
     preload() {
         this.load.image('background', 'assets/back1.png');//背景
         this.load.image('ground1', 'assets/ground1.png');//地面（チョコ）
-        this.load.image('logo', 'assets/logo.png');//ロゴ
         this.load.image('JStand', 'assets/J-stand.png');//J（主人公）
         this.load.image('JDamage', 'assets/J-damage.png');//J（主人公）
         this.load.image('JRun1', 'assets/J-run-1.png');//J（主人公）
@@ -39,21 +38,31 @@ export class Start extends Phaser.Scene {
 
         // ワールドと操作・物理設定
         this.worldWidth = 19200;
-        this.moveSpeed = 300;
+        this.moveSpeed = 400;
         this.cursors = this.input.keyboard.createCursorKeys();
-        this.gravity = 2300;//重力
-        this.jumpSpeed = 1100;//ジャンプ速度
+        this.gravity = 1000;//重力
+        this.jumpSpeed = 620;//ジャンプ速度
 
-        // 空中のオブジェクト
-        this.kuchu1 = this.add.tileSprite(1000, 400, 550, 35, 'kuchu1');//空中のオブジェクトを配置
+        // 空中のオブジェクト 
+        this.kuchu1 = this.add.tileSprite(1000, 460, 550, 35, 'kuchu1');//空中のオブジェクトを配置
 
         // 収集アイテム
         this.tangye = this.add.image(1500,  590, 'tangye');//タン・イーを配置
         this.tangye.setScale(0.3);//タン・イーのサイズを調整
+        this.hasCollectedTangye = false;//タン・イーを収集したかどうかのフラグ
+        this.tangyeCount = 0;//取得したタン・イーの数
+
+        // 取得数の表示（右上に固定）
+        this.tangyeCountText = this.add.text(this.scale.width - 20, 20, 'Tang-Ye: 0', {
+            fontSize: '32px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4
+        }).setOrigin(1, 0).setScrollFactor(0).setDepth(100);
 
         // プレイヤー
         this.JStand = this.add.sprite(220, 0, 'JStand');//J（主人公）を配置
-        this.JStand.setScale(0.8);//J（主人公）のサイズを調整
+        this.JStand.setScale(0.6) ;//J（主人公）のサイズを調整
         this.JStandBaseY = this.groundY - this.JStand.displayHeight / 2;
         this.JStand.y = this.JStandBaseY;
         if (!this.anims.exists('JRun')) {
@@ -77,14 +86,6 @@ export class Start extends Phaser.Scene {
 
     update(time,delta) {
         const deltaSeconds = delta / 1000;//デルタタイムを秒に変換
-        this.hasCollectedTangye = false;//タン・イーを収集したかどうかのフラグ
-        this.hasCollectedTangye2 = false;//タン・イー2を収集したかどうかのフラグ
-        this.isTutorialOpen = false;
-
-        if(this.isTutorialOpen) {
-            return;
-        }
-
         this.run(deltaSeconds);
 
         // ジャンプ入力
@@ -147,6 +148,8 @@ export class Start extends Phaser.Scene {
             if(isCollinding) {//J（主人公）とタン・イーが衝突した場合
                 this.hasCollectedTangye = true;//タン・イーを収集したことを示す
                 this.tangye.destroy();//タン・イーを非表示にする
+                this.tangyeCount += 1;
+                this.tangyeCountText.setText(`Tang-Ye: ${this.tangyeCount}`);
             }
         }
 

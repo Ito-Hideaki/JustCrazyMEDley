@@ -1,4 +1,4 @@
-import { Joho } from './scenes/joho.js';
+import { Denshi } from './scenes/Denshi.js';
 
 const config = {
     type: Phaser.AUTO,
@@ -10,7 +10,7 @@ const config = {
     backgroundColor: '#000000',
     pixelArt: false,
     scene: [
-        Joho
+        Denshi
     ],
     scale: {
         mode: Phaser.Scale.FIT,
