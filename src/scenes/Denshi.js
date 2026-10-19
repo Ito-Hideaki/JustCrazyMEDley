@@ -26,6 +26,12 @@ export class Denshi extends Phaser.Scene {
     create() {
         this.cameras.main.fadeIn(1000, 0, 0, 0);//Homeからの暗転から明るくする
         this.isLeaving = false;//ステージの右端から出ていく最中かどうか
+        this.isGameOver = false;
+        this.isDamageShowing = false;
+        this.isInvulnerable = false;
+        this.isKnockback = false;
+        this.mustReleaseMovementKeys = false;
+        this.damageTextureTimer = null;
         // 背景と地面
         this.background = this.add.tileSprite(640, 360, 1280, 720, 'background');//背景を配置
         this.groundHeight = 100;
@@ -53,6 +59,7 @@ export class Denshi extends Phaser.Scene {
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
         this.collectedNow = new Array(40).fill(false);//今回のプレイで取得したタン・イーの番号
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
+        this.wallGroup = this.add.group();//配置した壁の管理用
         this.AkatenGroup = this.add.group();//配置した赤点の管理用
         this.AotenGroup = this.add.group();//配置した青点の管理用
         this.tangyeCount = this.saveData.totalTangye;//取得したタン・イーの合計数
@@ -60,6 +67,7 @@ export class Denshi extends Phaser.Scene {
         this.placeAllMoveTangye();//未取得の動くタン・イーを配置
         this.placeAllAkaten();
         this.placeAllAoten();
+        this.placeAllWalls();//未取得の壁を配置
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
         this.tangyeCountText = this.add.text(this.scale.width - 20, 20, String(this.tangyeCount), {
@@ -95,6 +103,7 @@ export class Denshi extends Phaser.Scene {
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
         this.characterStandBaseY = this.groundY - this.characterStand.displayHeight / 2;
         this.characterStand.y = this.characterStandBaseY;
+        this.previousCharacterY = this.characterStand.y;
         if (!this.anims.exists('DenshiRun')) {
             this.anims.create({
                 key: 'DenshiRun',
@@ -183,6 +192,11 @@ export class Denshi extends Phaser.Scene {
             return;
         }
         const deltaSeconds = delta / 1000;//デルタタイムを秒に変換
+        if (this.isGameOver) {
+            this.characterStandVelocityY += this.gravity * deltaSeconds;
+            this.characterStand.y += this.characterStandVelocityY * deltaSeconds;
+            return;
+        }
         if (this.isLeaving) {
             // 出ていく最中は操作を受け付けず、右へ歩き続ける
             this.characterStand.x += this.moveSpeed * deltaSeconds;
@@ -203,25 +217,19 @@ export class Denshi extends Phaser.Scene {
         this.isGrounded = false;
 
         // Y方向の移動と空中オブジェクトとの判定
-        const footBottomY = this.characterStand.y + this.characterStand.displayHeight / 2;//キャラクターの足元のY座標
+        this.previousCharacterY = this.characterStand.y;
         const headTopY = this.characterStand.y - this.characterStand.displayHeight / 2;//キャラクターの頭頂のY座標
 
         this.characterStandVelocityY += this.gravity * deltaSeconds;//重力を適用
         this.characterStand.y += this.characterStandVelocityY * deltaSeconds;//Y軸の位置を更新
 
-        const currentBottomY = this.characterStand.y + this.characterStand.displayHeight / 2;//キャラクターの足元の現在のY座標
         const charaterBounds = this.characterStand.getBounds();//キャラクターのバウンディングボックスを取得
         for (const platform of this.platformGroup.getChildren()) {
             const platformBounds = platform.getBounds();//空中ブロックのバウンディングボックスを取得
             const overlapsX =
                 charaterBounds.right > platformBounds.left &&
                 charaterBounds.left < platformBounds.right;
-
-            const isCollidingWithPlatform =
-                this.characterStandVelocityY >= 0 &&
-                footBottomY <= platformBounds.top &&
-                currentBottomY >= platformBounds.top &&
-                overlapsX;
+            const isCollidingWithPlatform = this.isHitFromAbove(platform);
 
             const isCollidingWithHead =
                 this.characterStandVelocityY < 0 &&
@@ -257,7 +265,14 @@ export class Denshi extends Phaser.Scene {
         // アイテム取得判定
         const playerBounds = this.characterStand.getBounds();
         this.tangyeGroup.getChildren().slice().forEach(tangye => {
-            if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, tangye.getBounds())) {//J（主人公）とタン・イーが衝突した場合
+            const isTouching = Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, tangye.getBounds());
+            if (tangye.getData('awaitingSeparation')) {
+                if (!isTouching) {
+                    tangye.setData('awaitingSeparation', false);
+                }
+                return;
+            }
+            if (isTouching) {//J（主人公）とタン・イーが衝突した場合
                 if (tangye.getData('moving')) {//動くタン・イーに当たった
                     this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
                 }
@@ -273,25 +288,50 @@ export class Denshi extends Phaser.Scene {
         const playerGetDamage = this.characterStand.getBounds();
         this.AkatenGroup.getChildren().slice().forEach(akaten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, akaten.getBounds())) {//J（主人公）とアカテンが衝突した場合
-                if (akaten.getData('moving')) {//動くアカテンに当たった
-                    this.getDamage();
+                if (akaten.getData('moving') && this.isHitFromAbove(akaten)) {
+                    akaten.setTexture('tangye');
+                    akaten.setScale(0.2);
+                    akaten.setData('moving', false);
+                    akaten.setData('awaitingSeparation', true);
+                    this.tweens.killTweensOf(akaten);
+                    this.AkatenGroup.remove(akaten, false, false);
+                    this.tangyeGroup.add(akaten);
+                    this.characterStandVelocityY = -this.jumpSpeed;
+                }else if (akaten.getData('moving')) {//動くアカテンに当たった
+                    if (!this.isKnockback && !this.isInvulnerable) {
+                        const targetX = this.characterStand.x < akaten.x
+                            ? akaten.x - 200
+                            : akaten.x + 300;
+                        this.isKnockback = true;
+                        this.tweens.add({
+                            targets: this.characterStand,
+                            x: targetX,
+                            duration: 350,
+                            ease: 'Sine.easeOut',
+                            onComplete: () => {
+                                this.isKnockback = false;
+                            }
+                        });
+                        this.getDamage(0);
+                    }
                 }
-                this.collectedNow[akaten.getData('number')] = true;//取得した番号を記録
-                akaten.destroy();//アカテンを消す（グループからも自動で外れる）
-                this.tangyeCount += 1;
-                this.updateTangyeCountDisplay();
             }
         });
 
         this.AotenGroup.getChildren().slice().forEach(aoten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, aoten.getBounds())) {//J（主人公）とアオテンが衝突した場合
-                if (aoten.getData('moving')) {//動くアオテンに当たった
-                    this.getDamage();
+                if (aoten.getData('moving') && this.isHitFromAbove(aoten)) {
+                    aoten.setTexture('tangye');
+                    aoten.setScale(0.2);
+                    aoten.setData('moving', false);
+                    aoten.setData('awaitingSeparation', true);
+                    this.tweens.killTweensOf(aoten);
+                    this.AotenGroup.remove(aoten, false, false);
+                    this.tangyeGroup.add(aoten);
+                    this.characterStandVelocityY = -this.jumpSpeed;
+                }else if (aoten.getData('moving')) {//動くアオテンに当たった
+                    this.getAoten();
                 }
-                this.collectedNow[aoten.getData('number')] = true;//取得した番号を記録
-                aoten.destroy();//アオテンを消す（グループからも自動で外れる）
-                this.tangyeCount += 1;
-                this.updateTangyeCountDisplay();
             }
         });
 
@@ -303,6 +343,19 @@ export class Denshi extends Phaser.Scene {
     updateTangyeCountDisplay() {
         this.tangyeCountText.setText(String(this.tangyeCount));
         this.tangyeCountIcon.x = this.tangyeCountText.x - this.tangyeCountText.width - 10 - this.tangyeCountIcon.displayWidth / 2;
+    }
+
+    // キャラクターが上から対象に当たったかを判定する
+    isHitFromAbove(target) {
+        const playerBounds = this.characterStand.getBounds();
+        const targetBounds = target.getBounds();
+        const previousBottomY = this.previousCharacterY + this.characterStand.displayHeight / 2;
+
+        return this.characterStandVelocityY >= 0 &&
+            previousBottomY <= targetBounds.top &&
+            playerBounds.bottom >= targetBounds.top &&
+            playerBounds.right > targetBounds.left &&
+            playerBounds.left < targetBounds.right;
     }
 
     // 落とし穴を [左端X, 幅] の一覧で指定する。3個。穴の部分だけ地面を作らない
@@ -338,7 +391,7 @@ export class Denshi extends Phaser.Scene {
 
     // 落とし穴に落ちた：ライフを1減らし、直前の地面に戻る（ステージの最初には戻らない）
     fallIntoPit() {
-        this.getDamage();
+        this.getDamage(1);
         const pit = this.pits.find(p => this.characterStand.x > p.left - this.characterStand.displayWidth && this.characterStand.x < p.right + this.characterStand.displayWidth);
         const respawnX = pit ? pit.left - 150 : this.characterStand.x;
         this.characterStand.x = Math.max(respawnX, this.characterStand.displayWidth / 2);
@@ -347,14 +400,47 @@ export class Denshi extends Phaser.Scene {
         this.isGrounded = true;
     }
 
-    getDamage(){
+    getDamage(from){
+        if (from === 0 && this.isInvulnerable) {
+            return;
+        }
+
         this.life = Math.max(this.life -1 ,0 );
         this.updateLifeDisplay();
+        if (this.life > 0 && from === 0) {
+            this.isInvulnerable = true;
+            this.isDamageShowing = true;
+            this.mustReleaseMovementKeys = true;
+            this.characterStand.anims.stop();
+            this.characterStandVelocityY = -800;
+            this.characterStand.setTexture('DenshicharacterDamage');
+            this.damageTextureTimer = this.time.delayedCall(600, () => {
+                this.isInvulnerable = false;
+                this.isDamageShowing = false;
+                this.damageTextureTimer = null;
+                if (!this.isGameOver) {
+                    this.characterStand.setTexture('DenshicharacterStand');
+                }
+            });
+        }
+
         if (this.life <= 0) {
-            this.gameOver();
+            this.gameOver(from);
             return;
         }   
     }
+
+    getAoten(){
+        this.gameOver(0);
+        return;
+    }
+
+    placewall(x,y){
+        const wall = this.add.tileSprite(x, y, 50, 200, 'wall');
+        this.wallGroup.add(wall);
+        return wall;
+    }
+
 
     // 空中ブロックを1個、指定した座標に配置する
     placePlatform(x, y) {
@@ -404,7 +490,7 @@ export class Denshi extends Phaser.Scene {
             [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 250],
             [3000, 590],  [3000, 410],  [3000, 90],  [4600, 350],  [5200, 350],
             [5400, 350],  [6400, 230],  [7100, 590],  [7500, 590],  [8050, 330],
-            [8150, 330],  [8350, 90],  [8450, 90], [9300, 400], [9750, 90],
+            [8150, 330],  [8300, 90],  [8400, 90], [9300, 400], [9750, 90],
             [10200, 400], [11200, 150], [11800, 90], [11800, 400],
         ];
         positions.forEach(([x, y], number) => {
@@ -471,9 +557,9 @@ export class Denshi extends Phaser.Scene {
     placeAllAoten() {
         // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
         const moves = [
-            [590, 7300, 100], [120, 8300, 50], [590, 12400, 100], 
+            [590, 7300, 100], [200, 8500, 50], [590, 12400, 100], 
         ];
-        const numbers = [34,35,36];
+        const numbers = [37,38,39];
         moves.forEach(([y, centerX, range], i) => {
             const number = numbers[i];
             if (this.saveData.stages[this.stageIndex][number]) {
@@ -508,19 +594,49 @@ export class Denshi extends Phaser.Scene {
     }
 
     // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る
-    gameOver() {
+    gameOver(from) {
+        if (this.isGameOver) {
+            return;
+        }
+        this.isGameOver = true;
         this.isLeaving = true;
-        this.characterStand.setVisible(false);
-        const { width, height } = this.scale;
-        const img = this.add.image(width / 2, height / 2, 'gameover').setScrollFactor(0).setDepth(1000);
-        const fit = Math.min(width / img.width, height / img.height, 1);
-        img.setScale(fit);
-        this.time.delayedCall(2000, () => {
-            this.cameras.main.fadeOut(1000, 0, 0, 0);
-            this.cameras.main.once('camerafadeoutcomplete', () => {
-                this.scene.start('Home');
+        this.characterStand.anims.stop();
+        this.cameras.main.stopFollow();
+
+        const showGameOverImage = () => {
+            const { width, height } = this.scale;
+            const img = this.add.image(width / 2, height / 2, 'gameover')
+                .setScrollFactor(0)
+                .setDepth(1000)
+                .setAlpha(0);
+            const fit = Math.min(width / img.width, height / img.height, 1);
+            img.setScale(fit);
+            this.tweens.add({
+                targets: img,
+                alpha: 1,
+                duration: 800,
+                onComplete: () => {
+                    this.time.delayedCall(1000, () => {
+                        this.cameras.main.fadeOut(1000, 0, 0, 0);
+                        this.cameras.main.once('camerafadeoutcomplete', () => {
+                            this.scene.start('Home');
+                        });
+                    });
+                }
             });
-        });
+        };
+
+        if (from === 1) {
+            this.characterStand.setVisible(false);
+            this.characterStandVelocityY = 0;
+            showGameOverImage();
+        } else {
+            this.characterStand.setTexture('DenshicharacterDamage').setVisible(true);
+            this.characterStandVelocityY = -800;
+            this.time.delayedCall(1000, () => {
+                showGameOverImage();
+            });
+        }
     }
 
     // ステージの右端から出て、1秒かけて暗転しHomeへ戻る
@@ -533,6 +649,16 @@ export class Denshi extends Phaser.Scene {
     }
 
     run(deltaSeconds) {
+        if (this.isDamageShowing) {
+            return;
+        }
+        if (this.mustReleaseMovementKeys) {
+            if (this.cursors.left.isDown || this.cursors.right.isDown) {
+                return;
+            }
+            this.mustReleaseMovementKeys = false;
+        }
+
         let direction = 0;
         if (this.cursors.right.isDown) {
             direction = 1;
@@ -543,10 +669,10 @@ export class Denshi extends Phaser.Scene {
         if (direction !== 0) {
             this.characterStand.x += direction * this.moveSpeed * deltaSeconds;
             this.characterStand.setFlipX(direction < 0);
-            if (!this.characterStand.anims.isPlaying) {
+            if (!this.isDamageShowing && !this.characterStand.anims.isPlaying) {
                 this.characterStand.play('DenshiRun');
             }
-        } else {
+        } else if (!this.isDamageShowing) {
             this.characterStand.anims.stop();
             this.characterStand.setTexture('DenshicharacterStand');
         }
