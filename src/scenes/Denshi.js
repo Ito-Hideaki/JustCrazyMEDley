@@ -435,12 +435,6 @@ export class Denshi extends Phaser.Scene {
         return;
     }
 
-    placewall(x,y){
-        const wall = this.add.tileSprite(x, y, 50, 200, 'wall');
-        this.wallGroup.add(wall);
-        return wall;
-    }
-
 
     // 空中ブロックを1個、指定した座標に配置する
     placePlatform(x, y) {
