@@ -59,7 +59,6 @@ export class Denshi extends Phaser.Scene {
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
         this.collectedNow = new Array(40).fill(false);//今回のプレイで取得したタン・イーの番号
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
-        this.wallGroup = this.add.group();//配置した壁の管理用
         this.AkatenGroup = this.add.group();//配置した赤点の管理用
         this.AotenGroup = this.add.group();//配置した青点の管理用
         this.tangyeCount = this.saveData.totalTangye;//取得したタン・イーの合計数
@@ -67,7 +66,6 @@ export class Denshi extends Phaser.Scene {
         this.placeAllMoveTangye();//未取得の動くタン・イーを配置
         this.placeAllAkaten();
         this.placeAllAoten();
-        this.placeAllWalls();//未取得の壁を配置
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
         this.tangyeCountText = this.add.text(this.scale.width - 20, 20, String(this.tangyeCount), {
