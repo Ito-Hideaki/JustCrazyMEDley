@@ -351,7 +351,7 @@ export class Denshi extends Phaser.Scene {
         this.life = Math.max(this.life -1 ,0 );
         this.updateLifeDisplay();
         if (this.life <= 0) {
-
+            this.gameOver();
             return;
         }   
     }
