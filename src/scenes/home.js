@@ -10,7 +10,7 @@ export class Home extends Phaser.Scene {
 
     preload() {
         this.load.image('background', 'assets/back1.png');//背景
-        this.load.image('ground1', 'assets/ground1.png');//地面（チョコ）
+        this.load.image('ground1', 'assets/ground1.png');//地面
         this.load.image('characterStand', 'assets/J-stand.png');//J（主人公）
         this.load.image('characterRun1', 'assets/J-run-1.png');//J（主人公）
         this.load.image('characterRun2', 'assets/J-run-2.png');//J（主人公）
@@ -26,7 +26,6 @@ export class Home extends Phaser.Scene {
         this.groundHeight = 100;
         this.groundY = this.scale.height - this.groundHeight;
         this.add.tileSprite(0, this.groundY, this.scale.width, this.groundHeight, 'ground1').setOrigin(0, 0);
-        this.add.rectangle(0, this.groundY, this.scale.width, 6, 0x75c645).setOrigin(0, 0);//地面の境界
 
         // 操作・物理設定（Johoと同じ）
         this.moveSpeed = 600;
