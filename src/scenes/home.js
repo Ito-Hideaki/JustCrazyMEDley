@@ -20,9 +20,7 @@ export class Home extends Phaser.Scene {
     }
 
     create() {
-        if (this.fromStage) {
-            this.cameras.main.fadeIn(1000, 0, 0, 0);
-        }
+        this.cameras.main.fadeIn(1000, 0, 0, 0);
         // 背景と地面（1画面に収まるのでスクロールしない）
         this.add.tileSprite(640, 360, 1280, 720, 'background');
         this.groundHeight = 100;

@@ -19,6 +19,7 @@ export class Denshi extends Phaser.Scene {
         this.load.image('Akaten', 'assets/Akaten.png');//赤点
         this.load.image('Aoten', 'assets/Aoten.png');//青点
         this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
+        this.load.image('gameover', 'assets/gameover.png');
         this.load.image('life', 'assets/life.png');//ライフアイコン
     }
 
@@ -38,7 +39,7 @@ export class Denshi extends Phaser.Scene {
         this.background.setScrollFactor(0);
 
         // ワールドと操作・物理設定
-        this.moveSpeed =600;
+        this.moveSpeed =650;
         this.cursors = this.input.keyboard.createCursorKeys();
         this.gravity = 3000;//重力
         this.jumpSpeed = 1100;//ジャンプ速度
@@ -52,8 +53,13 @@ export class Denshi extends Phaser.Scene {
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
         this.collectedNow = new Array(40).fill(false);//今回のプレイで取得したタン・イーの番号
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
+        this.AkatenGroup = this.add.group();//配置した赤点の管理用
+        this.AotenGroup = this.add.group();//配置した青点の管理用
         this.tangyeCount = this.saveData.totalTangye;//取得したタン・イーの合計数
         this.placeAllTangye();//未取得のタン・イーを配置
+        this.placeAllMoveTangye();//未取得の動くタン・イーを配置
+        this.placeAllAkaten();
+        this.placeAllAoten();
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
         this.tangyeCountText = this.add.text(this.scale.width - 20, 20, String(this.tangyeCount), {
@@ -188,9 +194,11 @@ export class Denshi extends Phaser.Scene {
         }
 
         // ジャンプ入力
-        if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.isGrounded) {//スペースキーが押され、かつ地面にいる場合
-            this.characterStandVelocityY = -this.jumpSpeed;//ジャンプ速度を設定
-            this.isGrounded = false;//地面から離れたことを示す
+        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            if (this.isGrounded) {//スペースキーが押され、かつ地面にいる場合
+                this.characterStandVelocityY = -this.jumpSpeed;//ジャンプ速度を設定
+                this.isGrounded = false;//地面から離れたことを示す
+            }
         }
         this.isGrounded = false;
 
@@ -250,8 +258,38 @@ export class Denshi extends Phaser.Scene {
         const playerBounds = this.characterStand.getBounds();
         this.tangyeGroup.getChildren().slice().forEach(tangye => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, tangye.getBounds())) {//J（主人公）とタン・イーが衝突した場合
+                if (tangye.getData('moving')) {//動くタン・イーに当たった
+                    this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
+                }
                 this.collectedNow[tangye.getData('number')] = true;//取得した番号を記録
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
+                this.tangyeCount += 1;
+                this.updateTangyeCountDisplay();
+            }
+        });
+
+
+
+        const playerGetDamage = this.characterStand.getBounds();
+        this.AkatenGroup.getChildren().slice().forEach(akaten => {
+            if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, akaten.getBounds())) {//J（主人公）とアカテンが衝突した場合
+                if (akaten.getData('moving')) {//動くアカテンに当たった
+                    this.getDamage();
+                }
+                this.collectedNow[akaten.getData('number')] = true;//取得した番号を記録
+                akaten.destroy();//アカテンを消す（グループからも自動で外れる）
+                this.tangyeCount += 1;
+                this.updateTangyeCountDisplay();
+            }
+        });
+
+        this.AotenGroup.getChildren().slice().forEach(aoten => {
+            if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, aoten.getBounds())) {//J（主人公）とアオテンが衝突した場合
+                if (aoten.getData('moving')) {//動くアオテンに当たった
+                    this.getDamage();
+                }
+                this.collectedNow[aoten.getData('number')] = true;//取得した番号を記録
+                aoten.destroy();//アオテンを消す（グループからも自動で外れる）
                 this.tangyeCount += 1;
                 this.updateTangyeCountDisplay();
             }
@@ -300,14 +338,22 @@ export class Denshi extends Phaser.Scene {
 
     // 落とし穴に落ちた：ライフを1減らし、直前の地面に戻る（ステージの最初には戻らない）
     fallIntoPit() {
-        this.life = Math.max(this.life - 1, 0);
-        this.updateLifeDisplay();
+        this.getDamage();
         const pit = this.pits.find(p => this.characterStand.x > p.left - this.characterStand.displayWidth && this.characterStand.x < p.right + this.characterStand.displayWidth);
         const respawnX = pit ? pit.left - 150 : this.characterStand.x;
         this.characterStand.x = Math.max(respawnX, this.characterStand.displayWidth / 2);
         this.characterStand.y = this.characterStandBaseY;
         this.characterStandVelocityY = 0;
         this.isGrounded = true;
+    }
+
+    getDamage(){
+        this.life = Math.max(this.life -1 ,0 );
+        this.updateLifeDisplay();
+        if (this.life <= 0) {
+
+            return;
+        }   
     }
 
     // 空中ブロックを1個、指定した座標に配置する
@@ -336,6 +382,22 @@ export class Denshi extends Phaser.Scene {
         return tangye;
     }
 
+    placeAkaten(number, x, y) {
+        const Akaten = this.add.image(x, y, 'Akaten');
+        Akaten.setScale(0.2);
+        Akaten.setData('number', number);
+        this.AkatenGroup.add(Akaten);
+        return Akaten;
+    }
+
+    placeAoten(number, x, y) {
+        const Aoten = this.add.image(x, y, 'Aoten');
+        Aoten.setScale(0.2);
+        Aoten.setData('number', number);
+        this.AotenGroup.add(Aoten);
+        return Aoten;
+    }
+
     // タン・イーの座標一覧。配列の位置がそのまま番号（0〜）になる。30〜39は隠しブロック・赤点・青点用に空けてある
     placeAllTangye() {
         const positions = [
@@ -343,8 +405,7 @@ export class Denshi extends Phaser.Scene {
             [3000, 590],  [3000, 410],  [3000, 90],  [4600, 350],  [5200, 350],
             [5400, 350],  [6400, 230],  [7100, 590],  [7500, 590],  [8050, 330],
             [8150, 330],  [8350, 90],  [8450, 90], [9300, 400], [9750, 90],
-            [10200, 400], [11200, 150], [11800, 90], [11800, 400], [135000, 590],
-            [140000, 590], [145000, 590], [150000, 590], [155000, 590], [160000, 590],
+            [10200, 400], [11200, 150], [11800, 90], [11800, 400],
         ];
         positions.forEach(([x, y], number) => {
             if (!this.saveData.stages[this.stageIndex][number]) {//取得済みの番号は配置しない
@@ -353,6 +414,85 @@ export class Denshi extends Phaser.Scene {
         });
     }
 
+    // 上下に動くタン・イーを配置する。番号は24〜29、30〜33を順に使う
+    placeAllMoveTangye() {
+        // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
+        const moves = [
+            [1600, 350, 120], [4500, 350, 150], [5000, 300, 100], [5300, 350, 200], [5800, 200, 50],
+            [6800, 350, 100], [7800, 400, 70], [8700, 100, 40], [10100, 200, 20], [12100, 100, 30],
+        ];
+        const numbers = [24, 25, 26, 27, 28, 29, 30, 31, 32, 33];
+        moves.forEach(([x, centerY, range], i) => {
+            const number = numbers[i];
+            if (this.saveData.stages[this.stageIndex][number]) {
+                return;
+            }
+            const tangye = this.placeTangye(number, x, centerY - range);
+            tangye.setData('moving', true);
+            tangye.setScale(0.3);//動くタン・イーは少し大きくする
+            this.tweens.add({
+                targets: tangye,
+                y: centerY + range,
+                duration: 1500,
+                ease: 'Sine.easeInOut',
+                yoyo: true,
+                repeat: -1,
+                delay: i * 100,
+            });
+        });
+    }
+
+    placeAllAkaten() {
+        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        const moves = [
+            [590, 2000, 80], [590, 3840, 20], [590, 10800, 40], 
+        ];
+        const numbers = [34,35,36];
+        moves.forEach(([y, centerX, range], i) => {
+            const number = numbers[i];
+            if (this.saveData.stages[this.stageIndex][number]) {
+                return;
+            }
+            const akaten = this.placeAkaten(number,  centerX - range, y);
+            akaten.setData('moving', true);
+            akaten.setScale(0.3);//動くタン・イーは少し大きくする
+            this.tweens.add({
+                targets: akaten,
+                x: centerX + range,
+                duration: 1500,
+                ease: 'Sine.easeInOut',
+                yoyo: true,
+                repeat: -1,
+                delay: i * 10,
+            });
+        });
+    }
+
+    placeAllAoten() {
+        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        const moves = [
+            [590, 7300, 100], [120, 8300, 50], [590, 12400, 100], 
+        ];
+        const numbers = [34,35,36];
+        moves.forEach(([y, centerX, range], i) => {
+            const number = numbers[i];
+            if (this.saveData.stages[this.stageIndex][number]) {
+                return;
+            }
+            const aoten = this.placeAoten(number,  centerX - range, y);
+            aoten.setData('moving', true);
+            aoten.setScale(0.3);//動くタン・イーは少し大きくする
+            this.tweens.add({
+                targets: aoten,
+                x: centerX + range,
+                duration: 1500,
+                ease: 'Sine.easeInOut',
+                yoyo: true,
+                repeat: -1,
+                delay: i * 5,
+            });
+        });
+    }
     // ステージ完了時に呼ぶ。今回の取得分をセーブデータに反映し、ビット列を返す
     completeStage() {
         const stage = this.saveData.stages[this.stageIndex];
@@ -365,6 +505,22 @@ export class Denshi extends Phaser.Scene {
         this.saveData.totalTangye = this.saveData.stages.flat().filter(Boolean).length;
         this.registry.set('saveData', this.saveData);
         return encodeSaveData(this.saveData);
+    }
+
+    // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る
+    gameOver() {
+        this.isLeaving = true;
+        this.characterStand.setVisible(false);
+        const { width, height } = this.scale;
+        const img = this.add.image(width / 2, height / 2, 'gameover').setScrollFactor(0).setDepth(1000);
+        const fit = Math.min(width / img.width, height / img.height, 1);
+        img.setScale(fit);
+        this.time.delayedCall(2000, () => {
+            this.cameras.main.fadeOut(1000, 0, 0, 0);
+            this.cameras.main.once('camerafadeoutcomplete', () => {
+                this.scene.start('Home');
+            });
+        });
     }
 
     // ステージの右端から出て、1秒かけて暗転しHomeへ戻る

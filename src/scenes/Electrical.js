@@ -19,6 +19,7 @@ export class Electrical extends Phaser.Scene {
         this.load.image('Akaten', 'assets/Akaten.png');//赤点
         this.load.image('Aoten', 'assets/Aoten.png');//青点
         this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
+        this.load.image('gameover', 'assets/gameover.png');
         this.load.image('life', 'assets/life.png');//ライフアイコン
     }
 
@@ -302,6 +303,10 @@ export class Electrical extends Phaser.Scene {
     fallIntoPit() {
         this.life = Math.max(this.life - 1, 0);
         this.updateLifeDisplay();
+        if (this.life <= 0) {
+            this.gameOver();
+            return;
+        }
         const pit = this.pits.find(p => this.characterStand.x > p.left - this.characterStand.displayWidth && this.characterStand.x < p.right + this.characterStand.displayWidth);
         const respawnX = pit ? pit.left - 150 : this.characterStand.x;
         this.characterStand.x = Math.max(respawnX, this.characterStand.displayWidth / 2);
@@ -353,6 +358,10 @@ export class Electrical extends Phaser.Scene {
         });
     }
 
+    placeALLMoveTangye(){
+        
+    }
+
     // ステージ完了時に呼ぶ。今回の取得分をセーブデータに反映し、ビット列を返す
     completeStage() {
         const stage = this.saveData.stages[this.stageIndex];
@@ -365,6 +374,22 @@ export class Electrical extends Phaser.Scene {
         this.saveData.totalTangye = this.saveData.stages.flat().filter(Boolean).length;
         this.registry.set('saveData', this.saveData);
         return encodeSaveData(this.saveData);
+    }
+
+    // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る
+    gameOver() {
+        this.isLeaving = true;
+        this.characterStand.setVisible(false);
+        const { width, height } = this.scale;
+        const img = this.add.image(width / 2, height / 2, 'gameover').setScrollFactor(0).setDepth(1000);
+        const fit = Math.min(width / img.width, height / img.height, 1);
+        img.setScale(fit);
+        this.time.delayedCall(2000, () => {
+            this.cameras.main.fadeOut(1000, 0, 0, 0);
+            this.cameras.main.once('camerafadeoutcomplete', () => {
+                this.scene.start('Home');
+            });
+        });
     }
 
     // ステージの右端から出て、1秒かけて暗転しHomeへ戻る
