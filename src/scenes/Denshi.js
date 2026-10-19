@@ -75,6 +75,7 @@ export class Denshi extends Phaser.Scene {
         this.placeAllAoten();
         this.placeAllReports();
         this.placeAllEnadori();
+        this.startEnadoriSpawner();
 
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
@@ -272,6 +273,10 @@ export class Denshi extends Phaser.Scene {
                     this.AkatenGroup.remove(akaten, false, false);
                     this.tangyeGroup.add(akaten);
                     this.characterStandVelocityY = -this.jumpSpeed;
+                    if(this.life < 3) {
+                        this.life = Math.min(this.life + 1, this.maxLife);
+                        this.updateLifeDisplay();
+                    }
                 }else if (akaten.getData('moving')) {//動くアカテンに当たった
                     if (!this.isKnockback && !this.isInvulnerable) {
                         const targetX = this.characterStand.x < akaten.x
@@ -305,6 +310,10 @@ export class Denshi extends Phaser.Scene {
                     this.AotenGroup.remove(aoten, false, false);
                     this.tangyeGroup.add(aoten);
                     this.characterStandVelocityY = -this.jumpSpeed;
+                    if(this.life < 3) {
+                        this.life = Math.min(this.life + 1, this.maxLife);
+                        this.updateLifeDisplay();
+                    }
                 }else if (aoten.getData('moving')) {//動くアオテンに当たった
                     this.showDamageCause('aoten', aoten);
                     this.getAoten();
@@ -686,7 +695,7 @@ export class Denshi extends Phaser.Scene {
     // タン・イーの座標一覧。配列の位置がそのまま番号（0〜）になる。30〜39は隠しブロック・赤点・青点用に空けてある
     placeAllTangye() {
         const positions = [
-            [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 250],
+            [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 180],
             [3000, 590],  [3000, 410],  [3000, 90],  [4600, 350],  [5200, 350],
             [5400, 350],  [6400, 230],  [7100, 590],  [7500, 590],  [8050, 330],
             [8150, 330],  [8300, 90],  [8400, 90], [9300, 400], [9750, 90],
@@ -795,7 +804,8 @@ export class Denshi extends Phaser.Scene {
     // レポートの一覧。[中心x, y, 中心から左右に動く幅]。1つずつ設定する
     placeAllReports() {
         const reports = [
-            [1500, this.groundY - 22, 100],
+            [2500, 250, 100],[6300,this.groundY-22,300],[8500, this.groundY-22, 500],
+            [11700, this.groundY-22, 200],[12100, this.groundY-22, 150]
         ];
         reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
     }
@@ -818,15 +828,43 @@ export class Denshi extends Phaser.Scene {
     // エナドリの一覧。[x, y]。yを省略すると地面の上に置く
     placeAllEnadori() {
         const enadori = [
-            [3000],[10200]
+            [3000]
         ];
         enadori.forEach(([x, y]) => this.placeEnadori(x, y ?? this.groundY - 20));
+    }
+
+    // エナドリを一定間隔で自動生成する。設定はここで変える
+    startEnadoriSpawner() {
+        const spawn = {
+            interval: 7000,//生成間隔（ミリ秒）
+            maxCount: 8,//同時に存在できる最大数
+            marginRight: 100,//画面の右端からこの距離だけ外側に出す
+        };
+        this.enadoriSpawnTimer = this.time.addEvent({
+            delay: spawn.interval,
+            loop: true,
+            callback: () => {
+                if (this.isGameOver || this.isLeaving || this.isCapturing) {
+                    return;
+                }
+                if (this.enadoriGroup.getLength() >= spawn.maxCount) {
+                    return;
+                }
+                const cam = this.cameras.main;
+                const x = cam.scrollX + this.scale.width + spawn.marginRight;
+                const isOverPit = this.pits.some(pit => x > pit.left && x < pit.right);
+                if (x > this.worldWidth || isOverPit) {//ステージの外や落とし穴の上には出さない
+                    return;
+                }
+                this.placeEnadori(x, this.groundY - 20);
+            }
+        });
     }
 
     // エナドリを転がして左へ進め、一定間隔で跳ねさせる。壁にぶつかると向きが逆になる
     updateEnadori(deltaSeconds) {
         const rollSpeed = 200;//横移動の速さ(px/秒)
-        const hopSpeed = 1000;//跳ね上がる初速
+        const hopSpeed = 800;//跳ね上がる初速
         const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
 
         this.enadoriGroup.getChildren().slice().forEach(body => {
@@ -856,7 +894,7 @@ export class Denshi extends Phaser.Scene {
                 hopTimer -= deltaSeconds;
                 if (hopTimer <= 0) {
                     velocityY = -hopSpeed;
-                    hopTimer = Phaser.Math.FloatBetween(1, 2.5);
+                    hopTimer = Phaser.Math.FloatBetween(1, 3);
                 }
             }
             body.setData('hopTimer', hopTimer);
@@ -884,7 +922,8 @@ export class Denshi extends Phaser.Scene {
                 }
             }
 
-            if (body.y - halfHeight > this.scale.height + 200) {//落とし穴に落ちたら消す
+            const isFarLeftOfScreen = body.x < this.cameras.main.scrollX - 300;//画面の左に抜けた
+            if (body.y - halfHeight > this.scale.height + 200 || isFarLeftOfScreen) {//落とし穴に落ちた・画面の左に抜けたら消す
                 body.destroy();
                 return;
             }
@@ -947,7 +986,7 @@ export class Denshi extends Phaser.Scene {
         }
 
         if (this.life <= 0) {
-            this.gameOver(from);
+            //this.gameOver(from);
             return;
         }
     }

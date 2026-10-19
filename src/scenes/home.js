@@ -77,7 +77,8 @@ export class Home extends Phaser.Scene {
                 fontSize: '22px',
                 color: '#ffffff',
                 stroke: '#000000',
-                strokeThickness: 4
+                strokeThickness: 4,
+                padding: { top: 6, bottom: 6 }
             }).setOrigin(0.5);
             block.setData('label', label);
             return block;
@@ -87,7 +88,8 @@ export class Home extends Phaser.Scene {
             fontSize: '32px',
             color: '#ffffff',
             stroke: '#000000',
-            strokeThickness: 5
+            strokeThickness: 5,
+            padding: { top: 8, bottom: 8 }
         }).setOrigin(0.5);
 
         this.isLeaving = false;
