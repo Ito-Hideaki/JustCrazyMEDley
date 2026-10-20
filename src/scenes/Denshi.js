@@ -32,7 +32,6 @@ export class Denshi extends Phaser.Scene {
         this.isGameOver = false;
         this.isDamageShowing = false;
         this.isInvulnerable = false;
-        this.isKnockback = false;
         this.mustReleaseMovementKeys = false;
         this.damageTextureTimer = null;
         // 背景と地面
@@ -278,20 +277,7 @@ export class Denshi extends Phaser.Scene {
                         this.updateLifeDisplay();
                     }
                 }else if (akaten.getData('moving')) {//動くアカテンに当たった
-                    if (!this.isKnockback && !this.isInvulnerable) {
-                        const targetX = this.characterStand.x < akaten.x
-                            ? akaten.x - 200
-                            : akaten.x + 300;
-                        this.isKnockback = true;
-                        this.tweens.add({
-                            targets: this.characterStand,
-                            x: targetX,
-                            duration: 350,
-                            ease: 'Sine.easeOut',
-                            onComplete: () => {
-                                this.isKnockback = false;
-                            }
-                        });
+                    if (!this.isInvulnerable) {
                         this.showDamageCause('akaten', akaten);
                         this.getDamage(0);
                     }
@@ -330,7 +316,7 @@ export class Denshi extends Phaser.Scene {
         this.previousCharacterX = this.characterStand.x;
     }
 
-    // 上から踏むと消滅してジャンプ、横や下から当たるとノックバックしてダメージを受ける
+    // 上から踏むと消滅してジャンプ、横や下から当たるとダメージを受けて相手は消える
     handleStompableContact(target, playerBounds, kind) {
         if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, target.getBounds())) {
             return;
@@ -338,22 +324,10 @@ export class Denshi extends Phaser.Scene {
         if (this.isHitFromAbove(target)) {
             target.destroy();
             this.characterStandVelocityY = -this.jumpSpeed;
-        } else if (!this.isKnockback && !this.isInvulnerable) {
-            const targetX = this.characterStand.x < target.x
-                ? target.x - 200
-                : target.x + 300;
-            this.isKnockback = true;
-            this.tweens.add({
-                targets: this.characterStand,
-                x: targetX,
-                duration: 350,
-                ease: 'Sine.easeOut',
-                onComplete: () => {
-                    this.isKnockback = false;
-                }
-            });
+        } else if (!this.isInvulnerable) {
             this.showDamageCause(kind, target);
             this.getDamage(0);
+            target.destroy();
         }
     }
 
@@ -976,12 +950,31 @@ export class Denshi extends Phaser.Scene {
             this.characterStandVelocityY = -800;
             this.characterStand.setTexture('DenshicharacterDamage');
             this.damageTextureTimer = this.time.delayedCall(600, () => {
-                this.isInvulnerable = false;
                 this.isDamageShowing = false;
                 this.damageTextureTimer = null;
                 if (!this.isGameOver) {
                     this.characterStand.setTexture('DenshicharacterStand');
                 }
+            });
+
+            // 無敵時間1.5秒の間、点滅する
+            if (this.blinkTimer) {
+                this.blinkTimer.remove(false);
+            }
+            this.blinkTimer = this.time.addEvent({
+                delay: 100,
+                repeat: 14,
+                callback: () => {
+                    this.characterStand.setAlpha(this.characterStand.alpha === 1 ? 0.3 : 1);
+                }
+            });
+            this.time.delayedCall(1500, () => {
+                this.isInvulnerable = false;
+                if (this.blinkTimer) {
+                    this.blinkTimer.remove(false);
+                    this.blinkTimer = null;
+                }
+                this.characterStand.setAlpha(1);
             });
         }
 
