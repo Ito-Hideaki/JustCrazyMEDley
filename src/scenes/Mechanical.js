@@ -53,7 +53,7 @@ export class Mechanical extends Phaser.Scene {
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
         this.collectedNow = new Array(40).fill(false);//今回のプレイで取得したタン・イーの番号
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
-        this.tangyeCount = this.saveData.totalTangye;//取得したタン・イーの合計数
+        this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字

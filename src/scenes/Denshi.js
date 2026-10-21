@@ -60,14 +60,15 @@ export class Denshi extends Phaser.Scene {
         // 収集アイテム
         this.stageIndex = 2;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
-        this.collectedNow = new Array(40).fill(false);//今回のプレイで取得したタン・イーの番号
+        this.stageTangyeRecord = this.saveData.stages[this.stageIndex].filter(Boolean).length;
+        this.runTangyeCount = 0;
         this.itemPreviousPositions = new WeakMap();
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
         this.AkatenGroup = this.add.group();//配置した赤点の管理用
         this.AotenGroup = this.add.group();//配置した青点の管理用
         this.reportGroup = this.add.group();//配置したレポートの管理用
         this.enadoriGroup = this.add.group();//配置したエナドリ（判定用の箱）の管理用
-        this.tangyeCount = this.saveData.totalTangye;//取得したタン・イーの合計数
+        this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
         this.placeAllMoveTangye();//未取得の動くタン・イーを配置
         this.placeAllAkaten();
@@ -251,9 +252,9 @@ export class Denshi extends Phaser.Scene {
                 if (tangye.getData('moving')) {//動くタン・イーに当たった
                     this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
                 }
-                this.collectedNow[tangye.getData('number')] = true;//取得した番号を記録
+                this.runTangyeCount += 1;
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
-                this.tangyeCount += 1;
+                this.tangyeCount = this.runTangyeCount;
                 this.updateTangyeCountDisplay();
             }
         });
@@ -676,9 +677,7 @@ export class Denshi extends Phaser.Scene {
             [10200, 400], [11200, 150], [11800, 90], [11800, 400],
         ];
         positions.forEach(([x, y], number) => {
-            if (!this.saveData.stages[this.stageIndex][number]) {//取得済みの番号は配置しない
-                this.placeTangye(number, x, y);
-            }
+            this.placeTangye(number, x, y);
         });
     }
 
@@ -692,9 +691,6 @@ export class Denshi extends Phaser.Scene {
         const numbers = [24, 25, 26, 27, 28, 29, 30, 31, 32, 33];
         moves.forEach(([x, centerY, range], i) => {
             const number = numbers[i];
-            if (this.saveData.stages[this.stageIndex][number]) {
-                return;
-            }
             const tangye = this.placeTangye(number, x, centerY - range);
             tangye.setData('moving', true);
             tangye.setScale(0.3);//動くタン・イーは少し大きくする
@@ -727,9 +723,6 @@ export class Denshi extends Phaser.Scene {
         const numbers = [34,35,36];
         moves.forEach(([y, centerX, range], i) => {
             const number = numbers[i];
-            if (this.saveData.stages[this.stageIndex][number]) {
-                return;
-            }
             const akaten = this.placeAkaten(number,  centerX - range, y);
             akaten.setData('moving', true);
             akaten.setScale(0.3);//動くタン・イーは少し大きくする
@@ -754,9 +747,6 @@ export class Denshi extends Phaser.Scene {
         const numbers = [37,38,39];
         moves.forEach(([y, centerX, range], i) => {
             const number = numbers[i];
-            if (this.saveData.stages[this.stageIndex][number]) {
-                return;
-            }
             const aoten = this.placeAoten(number,  centerX - range, y);
             aoten.setData('moving', true);
             aoten.setScale(0.3);//動くタン・イーは少し大きくする
@@ -1034,14 +1024,14 @@ export class Denshi extends Phaser.Scene {
             });
         }
     }
-    // ステージ完了時に呼ぶ。今回の取得分をセーブデータに反映し、ビット列を返す
+    // ステージ完了時に取得数の最高記録を保存し、ビット列を返す
     completeStage() {
         const stage = this.saveData.stages[this.stageIndex];
-        this.collectedNow.forEach((collected, number) => {
-            if (collected) {
-                stage[number] = true;
-            }
-        });
+        this.stageTangyeRecord = Math.max(this.stageTangyeRecord, this.runTangyeCount);
+        stage.fill(false);
+        for (let i = 0; i < this.stageTangyeRecord; i++) {
+            stage[i] = true;
+        }
         this.saveData.completedCount += 1;
         this.saveData.totalTangye = this.saveData.stages.flat().filter(Boolean).length;
         this.registry.set('saveData', this.saveData);
@@ -1050,7 +1040,11 @@ export class Denshi extends Phaser.Scene {
 
     // ステージの右端から出て、1秒かけて暗転しHomeへ戻る
     leaveStage() {
+        if (this.isLeaving) {
+            return;
+        }
         this.isLeaving = true;
+        this.completeStage();
         this.cameras.main.fadeOut(1000, 0, 0, 0);
         this.cameras.main.once('camerafadeoutcomplete', () => {
             this.scene.start('Home', { fromStage: true });

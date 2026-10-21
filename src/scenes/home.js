@@ -1,3 +1,5 @@
+import { createEmptySaveData } from '../saveData.js';
+
 export class Home extends Phaser.Scene {
 
     constructor() {
@@ -17,6 +19,7 @@ export class Home extends Phaser.Scene {
         this.load.image('characterRun3', 'assets/J-run-3.png');//J（主人公）
         this.load.image('characterRun4', 'assets/J-run-4.png');//J（主人公）
         this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
+        this.load.image('tangye', 'assets/tangye.png');//取得単位アイコン
     }
 
     create() {
@@ -57,12 +60,13 @@ export class Home extends Phaser.Scene {
 
         // 学科ブロック。順番はセーブデータのステージ番号と同じ
         const stages = [
-            { label: '機械工学科', scene: 'Mechanical' },
-            { label: '電気工学科', scene: 'Electrical' },
-            { label: '電子工学科', scene: 'Denshi' },
-            { label: '情報工学科', scene: 'Joho' },
-            { label: '物質工学科', scene: 'Chemical' },
+            { label: '機械工学科', scene: 'Mechanical', saveIndex: 0 },
+            { label: '電気工学科', scene: 'Electrical', saveIndex: 1 },
+            { label: '電子工学科', scene: 'Denshi', saveIndex: 2 },
+            { label: '情報工学科', scene: 'Joho', saveIndex: 3 },
+            { label: '物質工学科', scene: 'Chemical', saveIndex: 4 },
         ];
+        const saveData = this.registry.get('saveData') ?? createEmptySaveData();
         const blockWidth = 240;
         const blockHeight = 35;
         // ジャンプで頭が届く高さ（最高点より少し低い位置）にブロックの下面を置く
@@ -81,6 +85,15 @@ export class Home extends Phaser.Scene {
                 padding: { top: 6, bottom: 6 }
             }).setOrigin(0.5);
             block.setData('label', label);
+            const collectedCount = saveData.stages[stage.saveIndex].filter(Boolean).length;
+            const countLabel = this.add.text(x, y - 58, `取得単位数: ${collectedCount}/40`, {
+                fontSize: '18px',
+                color: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 4,
+                padding: { top: 6, bottom: 6 }
+            }).setOrigin(0.5);
+            block.setData('countLabel', countLabel);
             return block;
         });
 
