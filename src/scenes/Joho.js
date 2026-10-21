@@ -14,7 +14,7 @@ export class Joho extends Phaser.Scene {
         this.load.image('DenshicharacterRun1', 'assets/J-run-1.png');//J（主人公）
         this.load.image('DenshicharacterRun2', 'assets/J-run-2.png');//J（主人公）
         this.load.image('DenshicharacterRun3', 'assets/J-run-3.png');//J（主人公）
-        this.load.image('DenshicharacterRun4', 'assets/J                    -run-4.png');//J（主人公）
+        this.load.image('DenshicharacterRun4', 'assets/J-run-4.png');//J（主人公）
         this.load.image('tangye', 'assets/tangye.png');//タン・イー
         this.load.image('Akaten', 'assets/Akaten.png');//赤点
         this.load.image('Aoten', 'assets/Aoten.png');//青点
@@ -59,7 +59,7 @@ export class Joho extends Phaser.Scene {
         // 収集アイテム
         this.stageIndex = 3;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
-        this.stageTangyeRecord = this.saveData.stages[this.stageIndex].filter(Boolean).length;
+        this.stageTangyeRecord = this.saveData.stages[this.stageIndex];
         this.runTangyeCount = 0;
         this.itemPreviousPositions = new WeakMap();
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
@@ -541,7 +541,7 @@ export class Joho extends Phaser.Scene {
     placeHiddenBlock(x, y, tangyeNumber, blockCount = 3) {
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(blockCount) || blockCount < 1 ||
             !Number.isInteger(tangyeNumber) || tangyeNumber < 0 ||
-            tangyeNumber >= this.saveData.stages[this.stageIndex].length) {
+            tangyeNumber >= 40) {
             throw new RangeError('placeHiddenBlock requires finite coordinates, a valid tangyeNumber and a positive integer blockCount');
         }
 
@@ -1027,13 +1027,13 @@ export class Joho extends Phaser.Scene {
         }
 
         if (this.life <= 0) {
-            this.gameOver(from);
+            //this.gameOver(from);
             return;
         }
     }
 
     getAoten(){
-        this.gameOver(0);
+        //this.gameOver(0);
         return;
     }
 
@@ -1084,14 +1084,10 @@ export class Joho extends Phaser.Scene {
     }
     // ステージ完了時に取得数の最高記録を保存し、ビット列を返す
     completeStage() {
-        const stage = this.saveData.stages[this.stageIndex];
         this.stageTangyeRecord = Math.max(this.stageTangyeRecord, this.runTangyeCount);
-        stage.fill(false);
-        for (let i = 0; i < this.stageTangyeRecord; i++) {
-            stage[i] = true;
-        }
+        this.saveData.stages[this.stageIndex] = this.stageTangyeRecord;
         this.saveData.completedCount += 1;
-        this.saveData.totalTangye = this.saveData.stages.flat().filter(Boolean).length;
+        this.saveData.totalTangye = this.saveData.stages.reduce((sum, count) => sum + count, 0);
         this.registry.set('saveData', this.saveData);
         return encodeSaveData(this.saveData);
     }

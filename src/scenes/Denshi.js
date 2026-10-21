@@ -60,7 +60,7 @@ export class Denshi extends Phaser.Scene {
         // 収集アイテム
         this.stageIndex = 2;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
-        this.stageTangyeRecord = this.saveData.stages[this.stageIndex].filter(Boolean).length;
+        this.stageTangyeRecord = this.saveData.stages[this.stageIndex];
         this.runTangyeCount = 0;
         this.itemPreviousPositions = new WeakMap();
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
@@ -1026,14 +1026,10 @@ export class Denshi extends Phaser.Scene {
     }
     // ステージ完了時に取得数の最高記録を保存し、ビット列を返す
     completeStage() {
-        const stage = this.saveData.stages[this.stageIndex];
         this.stageTangyeRecord = Math.max(this.stageTangyeRecord, this.runTangyeCount);
-        stage.fill(false);
-        for (let i = 0; i < this.stageTangyeRecord; i++) {
-            stage[i] = true;
-        }
+        this.saveData.stages[this.stageIndex] = this.stageTangyeRecord;
         this.saveData.completedCount += 1;
-        this.saveData.totalTangye = this.saveData.stages.flat().filter(Boolean).length;
+        this.saveData.totalTangye = this.saveData.stages.reduce((sum, count) => sum + count, 0);
         this.registry.set('saveData', this.saveData);
         return encodeSaveData(this.saveData);
     }

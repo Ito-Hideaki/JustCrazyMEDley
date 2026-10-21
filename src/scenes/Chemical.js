@@ -352,9 +352,7 @@ export class Chemical extends Phaser.Scene {
             [140000, 590], [145000, 590], [150000, 590], [155000, 590], [160000, 590],
         ];
         positions.forEach(([x, y], number) => {
-            if (!this.saveData.stages[this.stageIndex][number]) {//取得済みの番号は配置しない
-                this.placeTangye(number, x, y);
-            }
+            this.placeTangye(number, x, y);
         });
     }
 
@@ -364,14 +362,9 @@ export class Chemical extends Phaser.Scene {
 
     // ステージ完了時に呼ぶ。今回の取得分をセーブデータに反映し、ビット列を返す
     completeStage() {
-        const stage = this.saveData.stages[this.stageIndex];
-        this.collectedNow.forEach((collected, number) => {
-            if (collected) {
-                stage[number] = true;
-            }
-        });
+        this.saveData.stages[this.stageIndex] = Math.max(this.saveData.stages[this.stageIndex], this.tangyeCount);//最高記録のみ更新
         this.saveData.completedCount += 1;
-        this.saveData.totalTangye = this.saveData.stages.flat().filter(Boolean).length;
+        this.saveData.totalTangye = this.saveData.stages.reduce((sum, count) => sum + count, 0);
         this.registry.set('saveData', this.saveData);
         return encodeSaveData(this.saveData);
     }
