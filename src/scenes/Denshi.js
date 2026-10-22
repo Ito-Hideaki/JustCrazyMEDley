@@ -1,4 +1,5 @@
 import { createEmptySaveData, encodeSaveData } from '../saveData.js';
+import { createCommonItems, updateCommonItems } from './commonItems.js';
 
 export class Denshi extends Phaser.Scene {
 
@@ -24,6 +25,8 @@ export class Denshi extends Phaser.Scene {
         this.load.image('block', 'assets/block-one.png');
         this.load.image('report1', 'assets/report-1.png');//レポート
         this.load.image('enadori1', 'assets/enadori-1.png');//エナドリ
+        this.load.image('DenshiDamageItem', 'assets/D-condenser.png');//電子工学科専用damageアイテム
+        this.load.image('DenshiDamageExplosion', 'assets/D-condenser-bakuhatsu.png');//コンデンサーの爆発表示
     }
 
     create() {
@@ -64,18 +67,24 @@ export class Denshi extends Phaser.Scene {
         this.runTangyeCount = 0;
         this.itemPreviousPositions = new WeakMap();
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
-        this.AkatenGroup = this.add.group();//配置した赤点の管理用
-        this.AotenGroup = this.add.group();//配置した青点の管理用
-        this.reportGroup = this.add.group();//配置したレポートの管理用
-        this.enadoriGroup = this.add.group();//配置したエナドリ（判定用の箱）の管理用
+        this.departmentDamageGroup = this.add.group();//学科専用damageアイテムの管理用
         this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
-        this.placeAllMoveTangye();//未取得の動くタン・イーを配置
-        this.placeAllAkaten();
-        this.placeAllAoten();
-        this.placeAllReports();
-        this.placeAllEnadori();
-        this.startEnadoriSpawner();
+        createCommonItems(this, {
+            movingTangye: [
+                [1600, 350, 120], [4500, 350, 150], [5000, 300, 100], [5300, 350, 200], [5800, 200, 50],
+                [6800, 350, 100], [7800, 400, 70], [8700, 100, 40], [10100, 200, 20], [12100, 100, 30],
+            ],
+            akaten: [[590, 2000, 80], [590, 3840, 20], [590, 10800, 40]],
+            aoten: [[590, 7300, 100], [200, 8500, 50], [590, 12400, 100]],
+            reports: [
+                [2500, 250, 100], [6300, this.groundY - 22, 300], [8500, this.groundY - 22, 500],
+                [11700, this.groundY - 22, 200], [12100, this.groundY - 22, 150],
+            ],
+            enadori: [[3000, this.groundY - 20]],
+        });
+        this.enadoriGroup = this.commonEnadoriGroup;
+        this.placeAllDepartmentDamage();
 
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
@@ -230,7 +239,7 @@ export class Denshi extends Phaser.Scene {
         }
 
         this.updateHorizontalMovers(deltaSeconds);
-        this.updateEnadori(deltaSeconds);
+        updateCommonItems(this, deltaSeconds);
         this.resolveItemCollisions();
 
         // 落とし穴に落ちた（画面の下に出た）場合
@@ -311,6 +320,7 @@ export class Denshi extends Phaser.Scene {
         // レポート・エナドリ：上から踏むと消えて跳ね上がり、横や下から当たるとダメージ
         this.reportGroup.getChildren().slice().forEach(report => this.        handleStompableContact(report, playerGetDamage, 'report'));
                 this.enadoriGroup.getChildren().slice().forEach(enadori => this.handleStompableContact(enadori, playerGetDamage, 'enadori'));
+        this.departmentDamageGroup.getChildren().slice().forEach(item => this.handleStompableContact(item, playerGetDamage, 'departmentDamage'));
 
         // 地面のスクロール
         this.leftXText.setText(`X: ${Math.round(this.cameras.main.scrollX)}`);
@@ -319,16 +329,40 @@ export class Denshi extends Phaser.Scene {
 
     // 上から踏むと消滅してジャンプ、横や下から当たるとダメージを受けて相手は消える
     handleStompableContact(target, playerBounds, kind) {
+        if (target.getData('spent')) {
+            return;
+        }
         if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, target.getBounds())) {
             return;
         }
         if (this.isHitFromAbove(target)) {
             target.destroy();
             this.characterStandVelocityY = -this.jumpSpeed;
-        } else if (!this.isInvulnerable) {
-            this.showDamageCause(kind, target);
-            this.getDamage(0);
-            target.destroy();
+        } else {
+            const effectTexture = target.getData('damageEffectTexture');
+            if (effectTexture) {
+                if (!this.isInvulnerable) {
+                    this.showDamageCause(kind, target);
+                    this.getDamage(0);
+                }
+                this.departmentDamageGroup.remove(target, false, false);
+                this.itemPreviousPositions.delete(target);
+                target.setData('spent', true).setData('moving', false).setTexture(effectTexture);
+                const image = this.textures.get(effectTexture).getSourceImage();
+                target.setScale(Math.min(70 / image.width, 55 / image.height));
+                target.setAlpha(1);
+                this.tweens.add({
+                    targets: target,
+                    alpha: 0,
+                    delay: 150,
+                    duration: 500,
+                    onComplete: () => target.destroy(),
+                });
+            } else if (!this.isInvulnerable) {
+                this.showDamageCause(kind, target);
+                this.getDamage(0);
+                target.destroy();
+            }
         }
     }
 
@@ -338,6 +372,7 @@ export class Denshi extends Phaser.Scene {
         aoten: '青点... 再試なし...',
         report: '理不尽レポートを喰らった',
         enadori: 'カフェインの過剰摂取！寝なさい！',
+        departmentDamage: '電子工学科の専用アイテムにぶつかった！',
     };
 
     // 画面上部に、ダメージを受けた相手のメッセージを一定時間表示する
@@ -543,11 +578,7 @@ export class Denshi extends Phaser.Scene {
     // 左右に動く赤点・青点・レポートを進める。壁に横からぶつかったら、同じ動きのまま進む向きだけ逆にする
     updateHorizontalMovers(deltaSeconds) {
         const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
-        const movers = [
-            ...this.AkatenGroup.getChildren(),
-            ...this.AotenGroup.getChildren(),
-            ...this.reportGroup.getChildren(),
-        ];
+        const movers = this.departmentDamageGroup.getChildren();
         const angularSpeed = Math.PI / 1.5;//1.5秒で端から端まで（Sine.easeInOutの往復と同じ）
 
         movers.forEach(item => {
@@ -584,6 +615,7 @@ export class Denshi extends Phaser.Scene {
             ...this.AkatenGroup.getChildren(),
             ...this.AotenGroup.getChildren(),
             ...this.reportGroup.getChildren(),
+            ...this.departmentDamageGroup.getChildren(),
         ];
 
         items.forEach(item => {
@@ -763,6 +795,24 @@ export class Denshi extends Phaser.Scene {
             [11700, this.groundY-22, 200],[12100, this.groundY-22, 150]
         ];
         reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
+    }
+
+    // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
+    placeAllDepartmentDamage() {
+        const items = [
+            [3500, this.groundY - 25, 120, 'コンデンサーが爆発した！'],
+        ];
+        items.forEach(([centerX, y, range, damageMessage]) => {
+            const item = this.add.image(centerX - range, y, 'DenshiDamageItem');
+            const image = this.textures.get('DenshiDamageItem').getSourceImage();
+            item.setScale(Math.min(70 / image.width, 55 / image.height));
+            item.setData('moving', true);
+            item.setData('damageMessage', damageMessage);
+            item.setData('damageEffectTexture', 'DenshiDamageExplosion');
+            item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
+            this.departmentDamageGroup.add(item);
+            this.itemPreviousPositions.set(item, { x: item.x, y: item.y });
+        });
     }
 
     // エナドリを1個配置する。左へ転がり続け、ときどき跳ねる。x, yは判定用の箱の中心

@@ -23,6 +23,7 @@ export class Joho extends Phaser.Scene {
         this.load.image('block', 'assets/block-one.png');
         this.load.image('report1', 'assets/report-1.png');//レポート
         this.load.image('enadori1', 'assets/enadori-1.png');//エナドリ
+        this.load.image('JohoDamageItem', 'assets/J-semicolon.png');//情報工学科専用damageアイテム
     }
 
     create() {
@@ -68,6 +69,7 @@ export class Joho extends Phaser.Scene {
         this.AotenGroup = this.add.group();//配置した青点の管理用
         this.reportGroup = this.add.group();//配置したレポートの管理用
         this.enadoriGroup = this.add.group();//配置したエナドリ（判定用の箱）の管理用
+        this.departmentDamageGroup = this.add.group();//学科専用damageアイテムの管理用
         this.placeAllHiddenBlocks();
         this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
@@ -75,6 +77,7 @@ export class Joho extends Phaser.Scene {
         this.placeAllAkaten();
         this.placeAllAoten();
         this.placeAllReports();
+        this.placeAllDepartmentDamage();
         this.placeAllEnadori();
         this.startEnadoriSpawner();
 
@@ -240,7 +243,7 @@ export class Joho extends Phaser.Scene {
             this.isGrounded = true;//地面にいることを示す
         }
 
-        this.updateHorizontalMovers(deltaSeconds);
+        this.updateMovers(deltaSeconds);
         this.updateEnadori(deltaSeconds);
         this.resolveItemCollisions();
 
@@ -324,6 +327,7 @@ export class Joho extends Phaser.Scene {
         // レポート・エナドリ：上から踏むと消えて跳ね上がり、横や下から当たるとダメージ
         this.reportGroup.getChildren().slice().forEach(report => this.        handleStompableContact(report, playerGetDamage, 'report'));
                 this.enadoriGroup.getChildren().slice().forEach(enadori => this.handleStompableContact(enadori, playerGetDamage, 'enadori'));
+        this.departmentDamageGroup.getChildren().slice().forEach(item => this.handleStompableContact(item, playerGetDamage, 'departmentDamage'));
 
         // 地面のスクロール
         this.leftXText.setText(`X: ${Math.round(this.cameras.main.scrollX)}`);
@@ -351,6 +355,7 @@ export class Joho extends Phaser.Scene {
         aoten: '青点... 再試なし...',
         report: '理不尽レポートを喰らった',
         enadori: 'カフェインの過剰摂取！寝なさい！',
+        departmentDamage: '情報工学科の専用アイテムにぶつかった！',
     };
 
     // 画面上部に、ダメージを受けた相手のメッセージを一定時間表示する
@@ -597,13 +602,14 @@ export class Joho extends Phaser.Scene {
         }
     }
 
-    // 左右に動く赤点・青点・レポートを進める。壁に横からぶつかったら、同じ動きのまま進む向きだけ逆にする
-    updateHorizontalMovers(deltaSeconds) {
+    // 赤点・青点・レポートを動かす。ブロックに当たると進む向きを反転する
+    updateMovers(deltaSeconds) {
         const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
         const movers = [
             ...this.AkatenGroup.getChildren(),
             ...this.AotenGroup.getChildren(),
             ...this.reportGroup.getChildren(),
+            ...this.departmentDamageGroup.getChildren(),
         ];
         const angularSpeed = Math.PI / 1.5;//1.5秒で端から端まで（Sine.easeInOutの往復と同じ）
 
@@ -614,23 +620,27 @@ export class Joho extends Phaser.Scene {
             }
 
             const nextPhase = swing.phase + swing.direction * angularSpeed * deltaSeconds;
-            const nextX = swing.centerX - swing.range * Math.cos(nextPhase);
-            const halfWidth = item.getBounds().width / 2;
             const bounds = item.getBounds();
-
-            const hitsWall = solidBlocks.some(block => {
+            const offset = swing.range * Math.cos(nextPhase);
+            const nextX = swing.axis === 'vertical' ? swing.centerX : swing.centerX - offset;
+            const nextY = swing.axis === 'vertical' ? swing.centerY - offset : swing.centerY;
+            const halfWidth = bounds.width / 2;
+            const halfHeight = bounds.height / 2;
+            const hitsBlock = solidBlocks.some(block => {
                 const blockBounds = block.getBounds();
-                const overlapsY = bounds.bottom > blockBounds.top && bounds.top < blockBounds.bottom;
-                const overlapsNextX = nextX + halfWidth > blockBounds.left && nextX - halfWidth < blockBounds.right;
-                return overlapsY && overlapsNextX;
+                return nextX + halfWidth > blockBounds.left &&
+                    nextX - halfWidth < blockBounds.right &&
+                    nextY + halfHeight > blockBounds.top &&
+                    nextY - halfHeight < blockBounds.bottom;
             });
 
-            if (hitsWall) {
+            if (hitsBlock) {
                 swing.direction *= -1;
                 return;
             }
             swing.phase = nextPhase;
             item.x = nextX;
+            item.y = nextY;
         });
     }
 
@@ -641,6 +651,7 @@ export class Joho extends Phaser.Scene {
             ...this.AkatenGroup.getChildren(),
             ...this.AotenGroup.getChildren(),
             ...this.reportGroup.getChildren(),
+            ...this.departmentDamageGroup.getChildren(),
         ];
 
         items.forEach(item => {
@@ -773,15 +784,18 @@ export class Joho extends Phaser.Scene {
     }
 
     placeAllAkaten() {
-        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [590, 2000, 80]
+            [2000, 430, 150, 'vertical']
         ];
-        moves.forEach(([y, centerX, range]) => {
-            const akaten = this.placeAkaten(centerX - range, y);
+        moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
+            const akaten = this.placeAkaten(
+                axis === 'vertical' ? centerX : centerX - range,
+                axis === 'vertical' ? centerY - range : centerY
+            );
             akaten.setData('moving', true);
             akaten.setScale(0.3);//動くタン・イーは少し大きくする
-            akaten.setData('swing', { centerX, range, phase: 0, direction: 1 });
+            akaten.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         });
     }
 
@@ -794,15 +808,18 @@ export class Joho extends Phaser.Scene {
     }
 
     placeAllAoten() {
-        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [590, 7300, 100],
+            [7300, 430, 150, 'vertical'],
         ];
-        moves.forEach(([y, centerX, range]) => {
-            const aoten = this.placeAoten(centerX - range, y);
+        moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
+            const aoten = this.placeAoten(
+                axis === 'vertical' ? centerX : centerX - range,
+                axis === 'vertical' ? centerY - range : centerY
+            );
             aoten.setData('moving', true);
             aoten.setScale(0.3);//動くタン・イーは少し大きくする
-            aoten.setData('swing', { centerX, range, phase: 0, direction: 1 });
+            aoten.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         });
     }
 
@@ -811,7 +828,7 @@ export class Joho extends Phaser.Scene {
         const report = this.add.image(centerX - range, y, 'report1');
         report.setScale(0.5);//レポートのサイズ（元画像108×88）
         report.setData('moving', true);
-        report.setData('swing', { centerX, range, phase: 0, direction: 1 });
+        report.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
         this.reportGroup.add(report);
         this.itemPreviousPositions.set(report, { x: report.x, y: report.y });
         return report;
@@ -820,9 +837,26 @@ export class Joho extends Phaser.Scene {
     // レポートの一覧。[中心x, y, 中心から左右に動く幅]。1つずつ設定する
     placeAllReports() {
         const reports = [
-            [450, this.groundY-25, 50],[800,430,122.5],[1000,270,-122.5],[1200,110,140]
+            [450, this.groundY-25, 50],[800,414,122.5],[1000,254,-122.5],[1200,94,140]
         ];
         reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
+    }
+
+    // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
+    placeAllDepartmentDamage() {
+        const items = [
+            [3500, this.groundY - 25, 120, 'セミコロンが抜けている！'],
+        ];
+        items.forEach(([centerX, y, range, damageMessage]) => {
+            const item = this.add.image(centerX - range, y, 'JohoDamageItem');
+            const image = this.textures.get('JohoDamageItem').getSourceImage();
+            item.setScale(Math.min(70 / image.width, 55 / image.height));
+            item.setData('moving', true);
+            item.setData('damageMessage', damageMessage);
+            item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
+            this.departmentDamageGroup.add(item);
+            this.itemPreviousPositions.set(item, { x: item.x, y: item.y });
+        });
     }
 
     // エナドリを1個配置する。左へ転がり続け、ときどき跳ねる。x, yは判定用の箱の中心

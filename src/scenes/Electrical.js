@@ -1,4 +1,5 @@
 import { createEmptySaveData, encodeSaveData } from '../saveData.js';
+import { createCommonItems, updateCommonItems, resolveCommonItems } from './commonItems.js';
 
 export class Electrical extends Phaser.Scene {
 
@@ -21,6 +22,9 @@ export class Electrical extends Phaser.Scene {
         this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
         this.load.image('gameover', 'assets/gameover.png');
         this.load.image('life', 'assets/life.png');//ライフアイコン
+        this.load.image('ElectricalDamageItem', 'assets/E-Kanden.png');//電気工学科専用damageアイテム
+        this.load.image('report1', 'assets/report-1.png');//レポート
+        this.load.image('enadori1', 'assets/enadori-1.png');//エナドリ
     }
 
     create() {
@@ -52,8 +56,17 @@ export class Electrical extends Phaser.Scene {
         this.stageIndex = 1;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
+        this.departmentDamageGroup = this.add.group();//学科専用damageアイテムの管理用
         this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
+        createCommonItems(this, {
+            movingTangye: [[1800, 350, 100]],
+            akaten: [[590, 2200, 80]],
+            aoten: [[590, 7400, 100]],
+            reports: [[850, this.groundY - 25, 80]],
+            enadori: [[3200, this.groundY - 20]],
+        });
+        this.placeAllDepartmentDamage();
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
         this.tangyeCountText = this.add.text(this.scale.width - 20, 20, String(this.tangyeCount), {
@@ -87,6 +100,8 @@ export class Electrical extends Phaser.Scene {
         // プレイヤー
         this.characterStand = this.add.sprite(220, 0, 'ElectricalcharacterStand');//J（主人公）を配置
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
+        this.damageTextureKey = 'ElectricalcharacterDamage';
+        this.standTextureKey = 'ElectricalcharacterStand';
         this.characterStandBaseY = this.groundY - this.characterStand.displayHeight / 2;
         this.characterStand.y = this.characterStandBaseY;
         if (!this.anims.exists('ElectricalRun')) {
@@ -183,6 +198,8 @@ export class Electrical extends Phaser.Scene {
             return;
         }
         this.run(deltaSeconds);
+        this.updateDepartmentDamageMover(deltaSeconds);
+        updateCommonItems(this, deltaSeconds);
         if (this.characterStand.x > this.worldWidth) {
             this.leaveStage();
         }
@@ -250,11 +267,16 @@ export class Electrical extends Phaser.Scene {
         const playerBounds = this.characterStand.getBounds();
         this.tangyeGroup.getChildren().slice().forEach(tangye => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, tangye.getBounds())) {//J（主人公）とタン・イーが衝突した場合
+                if (tangye.getData('moving')) {
+                    this.characterStandVelocityY = -this.jumpSpeed;
+                }
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
                 this.tangyeCount += 1;
                 this.updateTangyeCountDisplay();
             }
         });
+        resolveCommonItems(this, playerBounds, footBottomY);
+        this.resolveDepartmentDamage(playerBounds, footBottomY);
 
         // 地面のスクロール
         this.leftXText.setText(`X: ${Math.round(this.cameras.main.scrollX)}`);
@@ -350,6 +372,95 @@ export class Electrical extends Phaser.Scene {
         ];
         positions.forEach(([x, y]) => {
             this.placeTangye(x, y);
+        });
+    }
+
+    // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
+    placeAllDepartmentDamage() {
+        const items = [
+            [2500, this.groundY - 25, 120, '感電してしまった！'],
+        ];
+        items.forEach(([centerX, y, range, damageMessage]) => {
+            const item = this.add.image(centerX - range, y, 'ElectricalDamageItem');
+            const image = this.textures.get('ElectricalDamageItem').getSourceImage();
+            item.setScale(Math.min(70 / image.width, 55 / image.height));
+            item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
+            item.setData('damageMessage', damageMessage);
+            this.departmentDamageGroup.add(item);
+        });
+    }
+
+    updateDepartmentDamageMover(deltaSeconds) {
+        const angularSpeed = Math.PI / 1.5;
+        const solidBlocks = [
+            ...this.platformGroup.getChildren(),
+            ...(this.wallGroup?.getChildren() ?? []),
+        ];
+        this.departmentDamageGroup.getChildren().forEach(item => {
+            const swing = item.getData('swing');
+            const nextPhase = swing.phase + swing.direction * angularSpeed * deltaSeconds;
+            const offset = swing.range * Math.cos(nextPhase);
+            const nextX = swing.axis === 'vertical' ? swing.centerX : swing.centerX - offset;
+            const nextY = swing.axis === 'vertical' ? swing.centerY - offset : swing.centerY;
+            const bounds = item.getBounds();
+            const hitsBlock = solidBlocks.some(block => {
+                const blockBounds = block.getBounds();
+                return nextX + bounds.width / 2 > blockBounds.left &&
+                    nextX - bounds.width / 2 < blockBounds.right &&
+                    nextY + bounds.height / 2 > blockBounds.top &&
+                    nextY - bounds.height / 2 < blockBounds.bottom;
+            });
+            if (hitsBlock) {
+                swing.direction *= -1;
+                return;
+            }
+            swing.phase = nextPhase;
+            item.setPosition(nextX, nextY);
+        });
+    }
+
+    resolveDepartmentDamage(playerBounds, previousBottomY) {
+        const currentBottomY = this.characterStand.y + this.characterStand.displayHeight / 2;
+        this.departmentDamageGroup.getChildren().slice().forEach(item => {
+            const itemBounds = item.getBounds();
+            if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, itemBounds)) {
+                return;
+            }
+
+            if (this.characterStandVelocityY >= 0 &&
+                previousBottomY <= itemBounds.top &&
+                currentBottomY >= itemBounds.top) {
+                this.characterStand.y = itemBounds.top - this.characterStand.displayHeight / 2;
+                this.characterStandVelocityY = -this.jumpSpeed * 1.2;
+                this.isGrounded = false;
+                item.destroy();
+                return;
+            }
+
+            const damageMessage = item.getData('damageMessage');
+            item.destroy();
+            this.showDamageMessage(damageMessage);
+            this.life = Math.max(this.life - 1, 0);
+            this.updateLifeDisplay();
+            if (this.life <= 0) {
+                this.gameOver();
+            } else {
+                this.characterStand.setTexture('ElectricalcharacterDamage');
+                this.time.delayedCall(600, () => {
+                    if (this.characterStand.active) {
+                        this.characterStand.setTexture('ElectricalcharacterStand');
+                    }
+                });
+            }
+
+        });
+    }
+
+    showDamageMessage(message) {
+        this.commonDamageMessage.setText(message).setVisible(true);
+        this.damageMessageTimer?.remove(false);
+        this.damageMessageTimer = this.time.delayedCall(2000, () => {
+            this.commonDamageMessage.setVisible(false);
         });
     }
 

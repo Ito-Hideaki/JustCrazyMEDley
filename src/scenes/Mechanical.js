@@ -1,4 +1,5 @@
 import { createEmptySaveData, encodeSaveData } from '../saveData.js';
+import { createCommonItems, updateCommonItems, resolveCommonItems } from './commonItems.js';
 
 export class Mechanical extends Phaser.Scene {
 
@@ -21,6 +22,9 @@ export class Mechanical extends Phaser.Scene {
         this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
         this.load.image('gameover', 'assets/gameover.png');
         this.load.image('life', 'assets/life.png');//ライフアイコン
+        this.load.image('MechanicalDamageItem', 'assets/M-scooter.png');//機械工学科専用damageアイテム
+        this.load.image('enadori1', 'assets/enadori-1.png');//エナドリ
+        this.load.image('report1', 'assets/report-1.png');//レポート
     }
 
     create() {
@@ -52,8 +56,18 @@ export class Mechanical extends Phaser.Scene {
         this.stageIndex = 0;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
+        this.enadoriGroup = this.add.group();//エナドリとスクーターの管理用
         this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
+        createCommonItems(this, {
+            movingTangye: [[1600, 350, 100]],
+            akaten: [[590, 2000, 80]],
+            aoten: [[590, 7300, 100]],
+            reports: [[450, this.groundY - 25, 50]],
+            enadori: [],
+        }, { spawnEnadori: false });
+        this.placeAllDepartmentDamage();
+        this.startEnadoriSpawner();
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
         this.tangyeCountText = this.add.text(this.scale.width - 20, 20, String(this.tangyeCount), {
@@ -87,6 +101,8 @@ export class Mechanical extends Phaser.Scene {
         // プレイヤー
         this.characterStand = this.add.sprite(220, 0, 'MechanicalcharacterStand');//J（主人公）を配置
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
+        this.damageTextureKey = 'MechanicalcharacterDamage';
+        this.standTextureKey = 'MechanicalcharacterStand';
         this.characterStandBaseY = this.groundY - this.characterStand.displayHeight / 2;
         this.characterStand.y = this.characterStandBaseY;
         if (!this.anims.exists('MechanicalRun')) {
@@ -183,6 +199,8 @@ export class Mechanical extends Phaser.Scene {
             return;
         }
         this.run(deltaSeconds);
+        this.updateEnadori(deltaSeconds);
+        updateCommonItems(this, deltaSeconds);
         if (this.characterStand.x > this.worldWidth) {
             this.leaveStage();
         }
@@ -250,11 +268,16 @@ export class Mechanical extends Phaser.Scene {
         const playerBounds = this.characterStand.getBounds();
         this.tangyeGroup.getChildren().slice().forEach(tangye => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, tangye.getBounds())) {//J（主人公）とタン・イーが衝突した場合
+                if (tangye.getData('moving')) {
+                    this.characterStandVelocityY = -this.jumpSpeed;
+                }
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
                 this.tangyeCount += 1;
                 this.updateTangyeCountDisplay();
             }
         });
+        resolveCommonItems(this, playerBounds, footBottomY);
+        this.resolveMechanicalHazards(playerBounds, footBottomY);
 
         // 地面のスクロール
         this.leftXText.setText(`X: ${Math.round(this.cameras.main.scrollX)}`);
@@ -350,6 +373,182 @@ export class Mechanical extends Phaser.Scene {
         ];
         positions.forEach(([x, y]) => {
             this.placeTangye(x, y);
+        });
+    }
+
+    // スクーターとエナドリは交互に出す。最初の1個はスクーター
+    placeAllDepartmentDamage() {
+        this.placeScooter(1500, this.groundY - 20);
+        this.nextMechanicalHazard = 'enadori';
+    }
+
+    placeMechanicalHazard(x, y, type) {
+        const isScooter = type === 'scooter';
+        const body = this.add.rectangle(x, y, isScooter ? 60 : 40, isScooter ? 30 : 40).setVisible(false);
+        const sprite = this.add.image(x, y, isScooter ? 'MechanicalDamageItem' : 'enadori1');
+        const image = this.textures.get(isScooter ? 'MechanicalDamageItem' : 'enadori1').getSourceImage();
+        sprite.setScale(isScooter ? Math.min(70 / image.width, 55 / image.height) : 0.5);
+        body.setData('sprite', sprite);
+        body.setData('type', type);
+        body.setData('direction', -1);
+        body.setData('velocityY', 0);
+        body.setData('grounded', true);
+        body.setData('rollSpeed', isScooter ? 120 : 200);
+        if (!isScooter) {
+            body.setData('hopTimer', Phaser.Math.FloatBetween(1, 2.5));
+            body.setData('hopSpeed', 800);
+        }
+        body.setData('bobPhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
+        body.setData('damageMessage', isScooter
+            ? 'スクーターにぶつかった！'
+            : 'カフェインの過剰摂取！寝なさい！');
+        body.once('destroy', () => sprite.destroy());
+        this.enadoriGroup.add(body);
+        return body;
+    }
+
+    placeScooter(x, y) {
+        return this.placeMechanicalHazard(x, y, 'scooter');
+    }
+
+    placeEnadori(x, y) {
+        return this.placeMechanicalHazard(x, y, 'enadori');
+    }
+
+    startEnadoriSpawner() {
+        this.time.addEvent({
+            delay: 7000,
+            loop: true,
+            callback: () => {
+                if (this.enadoriGroup.getLength() >= 8) {
+                    return;
+                }
+                const x = this.cameras.main.scrollX + this.scale.width + 100;
+                const isOverPit = this.pits.some(pit => x > pit.left && x < pit.right);
+                if (x > this.worldWidth || isOverPit) {
+                    return;
+                }
+                const type = this.nextMechanicalHazard;
+                if (type === 'scooter') {
+                    this.placeScooter(x, this.groundY - 20);
+                    this.nextMechanicalHazard = 'enadori';
+                } else {
+                    this.placeEnadori(x, this.groundY - 20);
+                    this.nextMechanicalHazard = 'scooter';
+                }
+            }
+        });
+    }
+
+    updateEnadori(deltaSeconds) {
+        const solids = this.platformGroup.getChildren();
+        this.enadoriGroup.getChildren().slice().forEach(body => {
+            const sprite = body.getData('sprite');
+            const halfWidth = body.width / 2;
+            const halfHeight = body.height / 2;
+            let direction = body.getData('direction');
+            let velocityY = body.getData('velocityY');
+            let grounded = false;
+            const nextX = body.x + direction * body.getData('rollSpeed') * deltaSeconds;
+            const hitsBlock = solids.some(block => {
+                const bounds = block.getBounds();
+                return body.y + halfHeight > bounds.top && body.y - halfHeight < bounds.bottom &&
+                    nextX + halfWidth > bounds.left && nextX - halfWidth < bounds.right;
+            });
+            if (hitsBlock) {
+                direction *= -1;
+            } else {
+                body.x = nextX;
+            }
+
+            let hopTimer = body.getData('hopTimer');
+            if (body.getData('type') === 'enadori' && body.getData('grounded')) {
+                hopTimer -= deltaSeconds;
+                if (hopTimer <= 0) {
+                    velocityY = -body.getData('hopSpeed');
+                    hopTimer = Phaser.Math.FloatBetween(1, 3);
+                }
+            }
+            const previousBottom = body.y + halfHeight;
+            velocityY += this.gravity * deltaSeconds;
+            body.y += velocityY * deltaSeconds;
+            const currentBottom = body.y + halfHeight;
+            grounded = false;
+            const pit = this.pits.some(item => body.x > item.left && body.x < item.right);
+            if (!pit && velocityY >= 0 && previousBottom <= this.groundY && currentBottom >= this.groundY) {
+                body.y = this.groundY - halfHeight;
+                velocityY = 0;
+                grounded = true;
+            }
+            for (const block of solids) {
+                const bounds = block.getBounds();
+                if (velocityY >= 0 && previousBottom <= bounds.top && body.y + halfHeight >= bounds.top &&
+                    body.x + halfWidth > bounds.left && body.x - halfWidth < bounds.right) {
+                    body.y = bounds.top - halfHeight;
+                    velocityY = 0;
+                    grounded = true;
+                }
+            }
+            body.setData('direction', direction);
+            body.setData('velocityY', velocityY);
+            body.setData('grounded', grounded);
+            if (body.getData('type') === 'enadori') {
+                body.setData('hopTimer', hopTimer);
+            }
+            if (body.getData('type') === 'scooter') {
+                const bobPhase = body.getData('bobPhase') + Math.PI * 2 * 8 * deltaSeconds;
+                body.setData('bobPhase', bobPhase);
+                sprite.setPosition(body.x, body.y + Math.sin(bobPhase) * 2.5);
+                sprite.setRotation(0);
+            } else {
+                sprite.setPosition(body.x, body.y);
+                sprite.rotation += direction * (body.getData('rollSpeed') / halfHeight) * deltaSeconds;
+            }
+            if (body.y - halfHeight > this.scale.height + 200 ||
+                body.x < this.cameras.main.scrollX - 300) {
+                body.destroy();
+            }
+        });
+    }
+
+    resolveMechanicalHazards(playerBounds, previousBottomY) {
+        const currentBottomY = this.characterStand.y + this.characterStand.displayHeight / 2;
+        this.enadoriGroup.getChildren().slice().forEach(body => {
+            const bounds = body.getBounds();
+            if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, bounds)) {
+                return;
+            }
+            if (this.characterStandVelocityY >= 0 &&
+                previousBottomY <= bounds.top && currentBottomY >= bounds.top) {
+                this.characterStand.y = bounds.top - this.characterStand.displayHeight / 2;
+                this.characterStandVelocityY = -this.jumpSpeed;
+                this.isGrounded = false;
+                body.destroy();
+                return;
+            }
+
+            this.showDamageMessage(body.getData('damageMessage'));
+            this.life = Math.max(this.life - 1, 0);
+            this.updateLifeDisplay();
+            body.destroy();
+            if (this.life <= 0) {
+                this.gameOver();
+            } else {
+                this.characterStand.setTexture('MechanicalcharacterDamage');
+                this.time.delayedCall(600, () => {
+                    if (this.characterStand.active) {
+                        this.characterStand.setTexture('MechanicalcharacterStand');
+                    }
+                });
+            }
+        });
+    }
+
+    showDamageMessage(message) {
+        this.commonDamageMessage.setText(message).setVisible(true);
+        this.damageMessageTimer?.remove(false);
+        this.damageMessageTimer = this.time.delayedCall(2000, () => {
+            this.commonDamageMessage.setVisible(false);
         });
     }
 
