@@ -18,6 +18,14 @@ Phaser.GameObjects.GameObjectFactory.prototype.text = function (x, y, text, styl
     return addText.call(this, x, y, text, style);
 };
 
+// 開発用：URLに ?scene=Joho のように付けると、そのシーンから開始する（再読み込みしてもTitleに戻らない）
+const scenes = [Title, Spell, Home, Mechanical, Electrical, Denshi, Joho, Chemical, Ending];
+const startKey = new URLSearchParams(location.search).get('scene');
+const startIndex = scenes.findIndex(scene => scene.name === startKey);
+if (startIndex > 0) {
+    scenes.unshift(...scenes.splice(startIndex, 1));
+}
+
 const config = {
     type: Phaser.AUTO,
     title: 'Overlord Rising',
@@ -27,17 +35,7 @@ const config = {
     height: 720,
     backgroundColor: '#000000',
     pixelArt: false,
-    scene: [
-        Title,
-        Spell,
-        Home,
-        Mechanical,
-        Electrical,
-        Denshi,
-        Joho,
-        Chemical,
-        Ending
-    ],
+    scene: scenes,
     scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH

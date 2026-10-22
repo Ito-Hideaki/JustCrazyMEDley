@@ -1,6 +1,6 @@
 import { createEmptySaveData, encodeSpell } from '../saveData.js';
 
-const AUTO_RETURN_MS = 20000;
+const AUTO_RETURN_MS = 60000;
 
 // 終了画面：ふっかつのじゅもんを画面いっぱいに表示し、20秒後かキー入力で最初の画面へ戻る
 export class Ending extends Phaser.Scene {

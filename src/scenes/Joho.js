@@ -55,6 +55,7 @@ export class Joho extends Phaser.Scene {
         this.platformGroup = this.add.group();//配置した空中ブロックの管理用
         this.wallGroup = this.add.group();//壁ブロックの管理用
         this.placeAllPlatforms();//空中ブロックを配置
+        this.placeAllWalls();//壁を配置
 
         // 収集アイテム
         this.stageIndex = 3;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
@@ -215,9 +216,7 @@ export class Joho extends Phaser.Scene {
                 this.characterStandVelocityY = 0;
                 if (platform.getData('hiddenBlock') && !platform.getData('revealed')) {
                     platform.getData('hiddenGroup').forEach(block => block.setVisible(true).setData('revealed', true));
-                    const tangyeNumber = platform.getData('tangyeNumber');
                     const tangye = this.placeTangye(
-                        tangyeNumber,
                         platformBounds.centerX,
                         platformBounds.top
                     );
@@ -263,6 +262,8 @@ export class Joho extends Phaser.Scene {
             if (isTouching) {//J（主人公）とタン・イーが衝突した場合
                 if (tangye.getData('moving')) {//動くタン・イーに当たった
                     this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
+                } else if (this.characterStandVelocityY > 0 && this.characterStand.y + this.playerHalfHeight <= tangye.y) {
+                    this.characterStandVelocityY = -this.jumpSpeed;//落下中に上から踏んだら跳ね上がる
                 }
                 this.runTangyeCount += 1;
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
@@ -336,7 +337,7 @@ export class Joho extends Phaser.Scene {
         }
         if (this.isHitFromAbove(target)) {
             target.destroy();
-            this.characterStandVelocityY = -this.jumpSpeed;
+            this.characterStandVelocityY = -this.jumpSpeed * 1.2;
         } else if (!this.isInvulnerable) {
             this.showDamageCause(kind, target);
             this.getDamage(0);
@@ -474,7 +475,7 @@ export class Joho extends Phaser.Scene {
     // 落とし穴を [左端X, 幅] の一覧で指定する。3個。穴の部分だけ地面を作らない
     placeAllPits() {
         const pits = [
-            [4500, 200], [5100, 400], [9100, 1400],
+            [700, 1600],[3500,1280],[6500,150],[8300,400],[9100,800]
         ];
         pits.forEach(([x, width]) => this.pits.push({ left: x, right: x + width }));
 
@@ -538,11 +539,9 @@ export class Joho extends Phaser.Scene {
     }
 
     // 隠しブロックを横にblockCount個並べて配置する。どれを叩いても全体が現れ、タン・イーは1個だけ出る
-    placeHiddenBlock(x, y, tangyeNumber, blockCount = 3) {
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(blockCount) || blockCount < 1 ||
-            !Number.isInteger(tangyeNumber) || tangyeNumber < 0 ||
-            tangyeNumber >= 40) {
-            throw new RangeError('placeHiddenBlock requires finite coordinates, a valid tangyeNumber and a positive integer blockCount');
+    placeHiddenBlock(x, y, blockCount = 3) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(blockCount) || blockCount < 1) {
+            throw new RangeError('placeHiddenBlock requires finite coordinates and a positive integer blockCount');
         }
 
         const blockWidth = this.textures.get('block').getSourceImage().width;
@@ -555,7 +554,6 @@ export class Joho extends Phaser.Scene {
             ).setVisible(false);
             block.setData('hiddenBlock', true);
             block.setData('revealed', false);
-            block.setData('tangyeNumber', tangyeNumber);
             block.setData('hiddenGroup', blocks);
             this.platformGroup.add(block);
             blocks.push(block);
@@ -564,11 +562,12 @@ export class Joho extends Phaser.Scene {
     }
 
     placeAllHiddenBlocks() {
+        // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
-            [2000, 460, 23, 3],
+            [450, this.groundY - 350, 3],
         ];
-        hiddenBlocks.forEach(([x, y, tangyeNumber, blockCount]) =>
-            this.placeHiddenBlock(x, y, tangyeNumber, blockCount));
+        hiddenBlocks.forEach(([x, y, blockCount]) =>
+            this.placeHiddenBlock(x, y, blockCount));
     }
 
     resolveWallCollisions(previousX) {
@@ -708,48 +707,49 @@ export class Joho extends Phaser.Scene {
     // 空中ブロックの中心座標と、横に並べるblock-oneの個数
     placeAllPlatforms() {
         const platforms = [
-            [1000, 460, 8],  [2500, 300, 8],  [3000, 460, 8],  [3000, 140, 8],  [5800, 300, 8],
-            [6400, 460, 8],  [8100, 460, 8],  [8375, 300, 8],  [9300, 550, 8],  [9750, 420, 8],
-            [10200, 510, 8], [11200, 300, 8], [11800, 460, 8], [11800, 140, 8], [15000, 460, 8],
+            [800, 460, 7],[1000, 300, 7],[1200, 140, 8],[1800,140,8],[3465,572.5, 4],
+            [3352.5, 397.5, 3],[3762.5,257.5,15],[4565,257.5,10],[8000,450,5],[8000,140,5],
+            [11700,450,5],[11700,300,5],[11700,150,5]
         ];
         platforms.forEach(([x, y, blockCount]) => this.placePlatform(x, y, blockCount));
     }
 
-    // タン・イーを1個、番号と座標を指定して配置する
-    placeTangye(number, x, y) {
+    // 壁を [左端X, 底辺Y, ブロック数] の一覧で指定する。ジャンプで越えられるのは5個まで
+    placeAllWalls() {
+        const walls = [
+            [3300, 450, 12],[3500,590,10],[4740,590,10],[5000,450,15],[7000,this.groundY, 4],
+            [7500, this.groundY, 4]
+        ];
+        walls.forEach(([x, y, blockCount]) => this.placeWall(x, y, blockCount));
+    }
+
+    // タン・イーを1個、座標を指定して配置する
+    placeTangye(x, y) {
         const tangye = this.add.image(x, y, 'tangye');
         tangye.setScale(0.2);
-        tangye.setData('number', number);
         this.tangyeGroup.add(tangye);
         this.itemPreviousPositions.set(tangye, { x: tangye.x, y: tangye.y });
         return tangye;
     }
 
-    // タン・イーの座標一覧。配列の位置がそのまま番号（0〜23）になる
+    // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
-            [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 180],
-            [3000, 590],  [3000, 410],  [3000, 90],  [4600, 350],  [5200, 350],
-            [5400, 350],  [6400, 230],  [7100, 590],  [7500, 590],  [8050, 330],
-            [8150, 330],  [8300, 90],  [8400, 90], [9300, 400], [9750, 90],
-            [10200, 400], [11200, 150], [11800, 90],
+            [450, 50]
         ];
-        positions.forEach(([x, y], number) => {
-            this.placeTangye(number, x, y);
+        positions.forEach(([x, y]) => {
+            this.placeTangye(x, y);
         });
     }
 
-    // 上下に動くタン・イーを配置する。番号は24〜29、30〜33を順に使う
+    // 上下に動くタン・イーを配置する
     placeAllMoveTangye() {
         // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
         const moves = [
-            [1600, 350, 120], [4500, 350, 150], [5000, 300, 100], [5300, 350, 200], [5800, 200, 50],
-            [6800, 350, 100], [7800, 400, 70], [8700, 100, 40], [10100, 200, 20], [12100, 100, 30],
+            [1600, 350, 120]
         ];
-        const numbers = [24, 25, 26, 27, 28, 29, 30, 31, 32, 33];
         moves.forEach(([x, centerY, range], i) => {
-            const number = numbers[i];
-            const tangye = this.placeTangye(number, x, centerY - range);
+            const tangye = this.placeTangye(x, centerY - range);
             tangye.setData('moving', true);
             tangye.setScale(0.3);//動くタン・イーは少し大きくする
             this.tweens.add({
@@ -764,10 +764,9 @@ export class Joho extends Phaser.Scene {
         });
     }
 
-    placeAkaten(number, x, y) {
+    placeAkaten(x, y) {
         const Akaten = this.add.image(x, y, 'Akaten');
         Akaten.setScale(0.2);
-        Akaten.setData('number', number);
         this.AkatenGroup.add(Akaten);
         this.itemPreviousPositions.set(Akaten, { x: Akaten.x, y: Akaten.y });
         return Akaten;
@@ -776,22 +775,19 @@ export class Joho extends Phaser.Scene {
     placeAllAkaten() {
         // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
         const moves = [
-            [590, 2000, 80], [590, 3840, 20], [590, 10800, 40], 
+            [590, 2000, 80]
         ];
-        const numbers = [34,35,36];
-        moves.forEach(([y, centerX, range], i) => {
-            const number = numbers[i];
-            const akaten = this.placeAkaten(number,  centerX - range, y);
+        moves.forEach(([y, centerX, range]) => {
+            const akaten = this.placeAkaten(centerX - range, y);
             akaten.setData('moving', true);
             akaten.setScale(0.3);//動くタン・イーは少し大きくする
             akaten.setData('swing', { centerX, range, phase: 0, direction: 1 });
         });
     }
 
-    placeAoten(number, x, y) {
+    placeAoten(x, y) {
         const Aoten = this.add.image(x, y, 'Aoten');
         Aoten.setScale(0.2);
-        Aoten.setData('number', number);
         this.AotenGroup.add(Aoten);
         this.itemPreviousPositions.set(Aoten, { x: Aoten.x, y: Aoten.y });
         return Aoten;
@@ -800,12 +796,10 @@ export class Joho extends Phaser.Scene {
     placeAllAoten() {
         // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
         const moves = [
-            [590, 7300, 100], [200, 8500, 50], [590, 12400, 100], 
+            [590, 7300, 100],
         ];
-        const numbers = [37,38,39];
-        moves.forEach(([y, centerX, range], i) => {
-            const number = numbers[i];
-            const aoten = this.placeAoten(number,  centerX - range, y);
+        moves.forEach(([y, centerX, range]) => {
+            const aoten = this.placeAoten(centerX - range, y);
             aoten.setData('moving', true);
             aoten.setScale(0.3);//動くタン・イーは少し大きくする
             aoten.setData('swing', { centerX, range, phase: 0, direction: 1 });
@@ -826,8 +820,7 @@ export class Joho extends Phaser.Scene {
     // レポートの一覧。[中心x, y, 中心から左右に動く幅]。1つずつ設定する
     placeAllReports() {
         const reports = [
-            [2500, 250, 100],[6300,this.groundY-22,300],[8500, this.groundY-22, 500],
-            [11700, this.groundY-22, 200],[12100, this.groundY-22, 150]
+            [450, this.groundY-25, 50],[800,430,122.5],[1000,270,-122.5],[1200,110,140]
         ];
         reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
     }

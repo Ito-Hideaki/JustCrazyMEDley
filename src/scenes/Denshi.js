@@ -657,17 +657,16 @@ export class Denshi extends Phaser.Scene {
         platforms.forEach(([x, y]) => this.placePlatform(x, y));
     }
 
-    // タン・イーを1個、番号と座標を指定して配置する
-    placeTangye(number, x, y) {
+    // タン・イーを1個、座標を指定して配置する
+    placeTangye(x, y) {
         const tangye = this.add.image(x, y, 'tangye');
         tangye.setScale(0.2);
-        tangye.setData('number', number);
         this.tangyeGroup.add(tangye);
         this.itemPreviousPositions.set(tangye, { x: tangye.x, y: tangye.y });
         return tangye;
     }
 
-    // タン・イーの座標一覧。配列の位置がそのまま番号（0〜）になる。30〜39は隠しブロック・赤点・青点用に空けてある
+    // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
             [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 180],
@@ -676,22 +675,20 @@ export class Denshi extends Phaser.Scene {
             [8150, 330],  [8300, 90],  [8400, 90], [9300, 400], [9750, 90],
             [10200, 400], [11200, 150], [11800, 90], [11800, 400],
         ];
-        positions.forEach(([x, y], number) => {
-            this.placeTangye(number, x, y);
+        positions.forEach(([x, y]) => {
+            this.placeTangye(x, y);
         });
     }
 
-    // 上下に動くタン・イーを配置する。番号は24〜29、30〜33を順に使う
+    // 上下に動くタン・イーを配置する
     placeAllMoveTangye() {
         // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
         const moves = [
             [1600, 350, 120], [4500, 350, 150], [5000, 300, 100], [5300, 350, 200], [5800, 200, 50],
             [6800, 350, 100], [7800, 400, 70], [8700, 100, 40], [10100, 200, 20], [12100, 100, 30],
         ];
-        const numbers = [24, 25, 26, 27, 28, 29, 30, 31, 32, 33];
         moves.forEach(([x, centerY, range], i) => {
-            const number = numbers[i];
-            const tangye = this.placeTangye(number, x, centerY - range);
+            const tangye = this.placeTangye(x, centerY - range);
             tangye.setData('moving', true);
             tangye.setScale(0.3);//動くタン・イーは少し大きくする
             this.tweens.add({
@@ -706,10 +703,9 @@ export class Denshi extends Phaser.Scene {
         });
     }
 
-    placeAkaten(number, x, y) {
+    placeAkaten(x, y) {
         const Akaten = this.add.image(x, y, 'Akaten');
         Akaten.setScale(0.2);
-        Akaten.setData('number', number);
         this.AkatenGroup.add(Akaten);
         this.itemPreviousPositions.set(Akaten, { x: Akaten.x, y: Akaten.y });
         return Akaten;
@@ -720,20 +716,17 @@ export class Denshi extends Phaser.Scene {
         const moves = [
             [590, 2000, 80], [590, 3840, 20], [590, 10800, 40], 
         ];
-        const numbers = [34,35,36];
-        moves.forEach(([y, centerX, range], i) => {
-            const number = numbers[i];
-            const akaten = this.placeAkaten(number,  centerX - range, y);
+        moves.forEach(([y, centerX, range]) => {
+            const akaten = this.placeAkaten(centerX - range, y);
             akaten.setData('moving', true);
             akaten.setScale(0.3);//動くタン・イーは少し大きくする
             akaten.setData('swing', { centerX, range, phase: 0, direction: 1 });
         });
     }
 
-    placeAoten(number, x, y) {
+    placeAoten(x, y) {
         const Aoten = this.add.image(x, y, 'Aoten');
         Aoten.setScale(0.2);
-        Aoten.setData('number', number);
         this.AotenGroup.add(Aoten);
         this.itemPreviousPositions.set(Aoten, { x: Aoten.x, y: Aoten.y });
         return Aoten;
@@ -744,10 +737,8 @@ export class Denshi extends Phaser.Scene {
         const moves = [
             [590, 7300, 100], [200, 8500, 50], [590, 12400, 100], 
         ];
-        const numbers = [37,38,39];
-        moves.forEach(([y, centerX, range], i) => {
-            const number = numbers[i];
-            const aoten = this.placeAoten(number,  centerX - range, y);
+        moves.forEach(([y, centerX, range]) => {
+            const aoten = this.placeAoten(centerX - range, y);
             aoten.setData('moving', true);
             aoten.setScale(0.3);//動くタン・イーは少し大きくする
             aoten.setData('swing', { centerX, range, phase: 0, direction: 1 });

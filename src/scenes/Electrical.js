@@ -51,7 +51,6 @@ export class Electrical extends Phaser.Scene {
         // 収集アイテム
         this.stageIndex = 1;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
-        this.collectedNow = new Array(40).fill(false);//今回のプレイで取得したタン・イーの番号
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
         this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
@@ -251,7 +250,6 @@ export class Electrical extends Phaser.Scene {
         const playerBounds = this.characterStand.getBounds();
         this.tangyeGroup.getChildren().slice().forEach(tangye => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, tangye.getBounds())) {//J（主人公）とタン・イーが衝突した場合
-                this.collectedNow[tangye.getData('number')] = true;//取得した番号を記録
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
                 this.tangyeCount += 1;
                 this.updateTangyeCountDisplay();
@@ -332,16 +330,15 @@ export class Electrical extends Phaser.Scene {
         platforms.forEach(([x, y]) => this.placePlatform(x, y));
     }
 
-    // タン・イーを1個、番号と座標を指定して配置する
-    placeTangye(number, x, y) {
+    // タン・イーを1個、座標を指定して配置する
+    placeTangye(x, y) {
         const tangye = this.add.image(x, y, 'tangye');
         tangye.setScale(0.2);
-        tangye.setData('number', number);
         this.tangyeGroup.add(tangye);
         return tangye;
     }
 
-    // タン・イーの座標一覧。配列の位置がそのまま番号（0〜）になる。30〜39は隠しブロック・赤点・青点用に空けてある
+    // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
             [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 250],
@@ -351,8 +348,8 @@ export class Electrical extends Phaser.Scene {
             [10200, 400], [11200, 150], [11800, 90], [11800, 400], [135000, 590],
             [140000, 590], [145000, 590], [150000, 590], [155000, 590], [160000, 590],
         ];
-        positions.forEach(([x, y], number) => {
-            this.placeTangye(number, x, y);
+        positions.forEach(([x, y]) => {
+            this.placeTangye(x, y);
         });
     }
 
