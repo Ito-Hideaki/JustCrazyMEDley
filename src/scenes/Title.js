@@ -1,3 +1,5 @@
+import { createEmptySaveData } from '../saveData.js';
+
 export class Title extends Phaser.Scene {
 
     constructor() {
@@ -11,6 +13,7 @@ export class Title extends Phaser.Scene {
 
 
     create() {
+        this.registry.set('saveData', createEmptySaveData());
         this.add.tileSprite(640, 360, 1280, 720, 'background');
 
         const centerX = this.scale.width / 2;

@@ -6,6 +6,9 @@ export const STAGE_COUNT = 5;
 const COUNTER_BITS = 8;
 const TOTAL_BITS = STAGE_COUNT * COUNTER_BITS + COUNTER_BITS * 2;
 
+// 開発用：URLに ?scene=○○ を付けて開いているときはゲームオーバーにしない
+export const IS_SCENE_DEBUG = Boolean(new URLSearchParams(globalThis.location?.search ?? '').get('scene'));
+
 export function createEmptySaveData() {
     return {
         stages: new Array(STAGE_COUNT).fill(0),

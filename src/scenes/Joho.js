@@ -1,4 +1,4 @@
-import { createEmptySaveData, encodeSaveData } from '../saveData.js';
+import { IS_SCENE_DEBUG, createEmptySaveData, encodeSaveData } from '../saveData.js';
 
 export class Joho extends Phaser.Scene {
 
@@ -1054,19 +1054,19 @@ export class Joho extends Phaser.Scene {
         }
 
         if (this.life <= 0) {
-            //this.gameOver(from);
+            this.gameOver(from);
             return;
         }
     }
 
     getAoten(){
-        //this.gameOver(0);
+        this.gameOver(0);
         return;
     }
 
     // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る
     gameOver(from) {
-        if (this.isGameOver) {
+        if (this.isGameOver || IS_SCENE_DEBUG) {
             return;
         }
         this.isGameOver = true;

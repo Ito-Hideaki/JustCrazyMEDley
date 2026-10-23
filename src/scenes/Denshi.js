@@ -1,5 +1,4 @@
-import { createEmptySaveData, encodeSaveData } from '../saveData.js';
-import { createCommonItems, updateCommonItems } from './commonItems.js';
+import { IS_SCENE_DEBUG, createEmptySaveData, encodeSaveData } from '../saveData.js';
 
 export class Denshi extends Phaser.Scene {
 
@@ -67,24 +66,20 @@ export class Denshi extends Phaser.Scene {
         this.runTangyeCount = 0;
         this.itemPreviousPositions = new WeakMap();
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
+        this.AkatenGroup = this.add.group();//配置した赤点の管理用
+        this.AotenGroup = this.add.group();//配置した青点の管理用
+        this.reportGroup = this.add.group();//配置したレポートの管理用
+        this.enadoriGroup = this.add.group();//配置したエナドリ（判定用の箱）の管理用
         this.departmentDamageGroup = this.add.group();//学科専用damageアイテムの管理用
         this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
-        createCommonItems(this, {
-            movingTangye: [
-                [1600, 350, 120], [4500, 350, 150], [5000, 300, 100], [5300, 350, 200], [5800, 200, 50],
-                [6800, 350, 100], [7800, 400, 70], [8700, 100, 40], [10100, 200, 20], [12100, 100, 30],
-            ],
-            akaten: [[590, 2000, 80], [590, 3840, 20], [590, 10800, 40]],
-            aoten: [[590, 7300, 100], [200, 8500, 50], [590, 12400, 100]],
-            reports: [
-                [2500, 250, 100], [6300, this.groundY - 22, 300], [8500, this.groundY - 22, 500],
-                [11700, this.groundY - 22, 200], [12100, this.groundY - 22, 150],
-            ],
-            enadori: [[3000, this.groundY - 20]],
-        });
-        this.enadoriGroup = this.commonEnadoriGroup;
+        this.placeAllMoveTangye();//未取得の動くタン・イーを配置
+        this.placeAllAkaten();
+        this.placeAllAoten();
+        this.placeAllReports();
         this.placeAllDepartmentDamage();
+        this.placeAllEnadori();
+        this.startEnadoriSpawner();
 
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
@@ -238,8 +233,8 @@ export class Denshi extends Phaser.Scene {
             this.isGrounded = true;//地面にいることを示す
         }
 
-        this.updateHorizontalMovers(deltaSeconds);
-        updateCommonItems(this, deltaSeconds);
+        this.updateMovers(deltaSeconds);
+        this.updateEnadori(deltaSeconds);
         this.resolveItemCollisions();
 
         // 落とし穴に落ちた（画面の下に出た）場合
@@ -372,7 +367,7 @@ export class Denshi extends Phaser.Scene {
         aoten: '青点... 再試なし...',
         report: '理不尽レポートを喰らった',
         enadori: 'カフェインの過剰摂取！寝なさい！',
-        departmentDamage: '電子工学科の専用アイテムにぶつかった！',
+        departmentDamage: '過電圧を加えてしまった！コンデンサ爆発！',
     };
 
     // 画面上部に、ダメージを受けた相手のメッセージを一定時間表示する
@@ -575,10 +570,15 @@ export class Denshi extends Phaser.Scene {
         }
     }
 
-    // 左右に動く赤点・青点・レポートを進める。壁に横からぶつかったら、同じ動きのまま進む向きだけ逆にする
-    updateHorizontalMovers(deltaSeconds) {
+    // 赤点・青点・レポートを動かす。ブロックに当たると進む向きを反転する
+    updateMovers(deltaSeconds) {
         const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
-        const movers = this.departmentDamageGroup.getChildren();
+        const movers = [
+            ...this.AkatenGroup.getChildren(),
+            ...this.AotenGroup.getChildren(),
+            ...this.reportGroup.getChildren(),
+            ...this.departmentDamageGroup.getChildren(),
+        ];
         const angularSpeed = Math.PI / 1.5;//1.5秒で端から端まで（Sine.easeInOutの往復と同じ）
 
         movers.forEach(item => {
@@ -588,23 +588,27 @@ export class Denshi extends Phaser.Scene {
             }
 
             const nextPhase = swing.phase + swing.direction * angularSpeed * deltaSeconds;
-            const nextX = swing.centerX - swing.range * Math.cos(nextPhase);
-            const halfWidth = item.getBounds().width / 2;
             const bounds = item.getBounds();
-
-            const hitsWall = solidBlocks.some(block => {
+            const offset = swing.range * Math.cos(nextPhase);
+            const nextX = swing.axis === 'vertical' ? swing.centerX : swing.centerX - offset;
+            const nextY = swing.axis === 'vertical' ? swing.centerY - offset : swing.centerY;
+            const halfWidth = bounds.width / 2;
+            const halfHeight = bounds.height / 2;
+            const hitsBlock = solidBlocks.some(block => {
                 const blockBounds = block.getBounds();
-                const overlapsY = bounds.bottom > blockBounds.top && bounds.top < blockBounds.bottom;
-                const overlapsNextX = nextX + halfWidth > blockBounds.left && nextX - halfWidth < blockBounds.right;
-                return overlapsY && overlapsNextX;
+                return nextX + halfWidth > blockBounds.left &&
+                    nextX - halfWidth < blockBounds.right &&
+                    nextY + halfHeight > blockBounds.top &&
+                    nextY - halfHeight < blockBounds.bottom;
             });
 
-            if (hitsWall) {
+            if (hitsBlock) {
                 swing.direction *= -1;
                 return;
             }
             swing.phase = nextPhase;
             item.x = nextX;
+            item.y = nextY;
         });
     }
 
@@ -744,15 +748,20 @@ export class Denshi extends Phaser.Scene {
     }
 
     placeAllAkaten() {
-        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [590, 2000, 80], [590, 3840, 20], [590, 10800, 40], 
+            [2000, 590, 80, 'horizontal'],
+            [3840, 590, 20, 'horizontal'],
+            [10800, 590, 40, 'horizontal'],
         ];
-        moves.forEach(([y, centerX, range]) => {
-            const akaten = this.placeAkaten(centerX - range, y);
+        moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
+            const akaten = this.placeAkaten(
+                axis === 'vertical' ? centerX : centerX - range,
+                axis === 'vertical' ? centerY - range : centerY
+            );
             akaten.setData('moving', true);
             akaten.setScale(0.3);//動くタン・イーは少し大きくする
-            akaten.setData('swing', { centerX, range, phase: 0, direction: 1 });
+            akaten.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         });
     }
 
@@ -765,15 +774,20 @@ export class Denshi extends Phaser.Scene {
     }
 
     placeAllAoten() {
-        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [590, 7300, 100], [200, 8500, 50], [590, 12400, 100], 
+            [7300, 590, 100, 'horizontal'],
+            [8500, 200, 50, 'horizontal'],
+            [12400, 590, 100, 'horizontal'],
         ];
-        moves.forEach(([y, centerX, range]) => {
-            const aoten = this.placeAoten(centerX - range, y);
+        moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
+            const aoten = this.placeAoten(
+                axis === 'vertical' ? centerX : centerX - range,
+                axis === 'vertical' ? centerY - range : centerY
+            );
             aoten.setData('moving', true);
             aoten.setScale(0.3);//動くタン・イーは少し大きくする
-            aoten.setData('swing', { centerX, range, phase: 0, direction: 1 });
+            aoten.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         });
     }
 
@@ -782,7 +796,7 @@ export class Denshi extends Phaser.Scene {
         const report = this.add.image(centerX - range, y, 'report1');
         report.setScale(0.5);//レポートのサイズ（元画像108×88）
         report.setData('moving', true);
-        report.setData('swing', { centerX, range, phase: 0, direction: 1 });
+        report.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
         this.reportGroup.add(report);
         this.itemPreviousPositions.set(report, { x: report.x, y: report.y });
         return report;
@@ -800,7 +814,7 @@ export class Denshi extends Phaser.Scene {
     // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
     placeAllDepartmentDamage() {
         const items = [
-            [3500, this.groundY - 25, 120, 'コンデンサーが爆発した！'],
+            [3500, this.groundY - 25, 120, '過電圧を加えてしまった！コンデンサ爆発！'],
         ];
         items.forEach(([centerX, y, range, damageMessage]) => {
             const item = this.add.image(centerX - range, y, 'DenshiDamageItem');
@@ -833,7 +847,7 @@ export class Denshi extends Phaser.Scene {
     // エナドリの一覧。[x, y]。yを省略すると地面の上に置く
     placeAllEnadori() {
         const enadori = [
-            [3000]
+            [3000],
         ];
         enadori.forEach(([x, y]) => this.placeEnadori(x, y ?? this.groundY - 20));
     }
@@ -1010,7 +1024,7 @@ export class Denshi extends Phaser.Scene {
         }
 
         if (this.life <= 0) {
-            //this.gameOver(from);
+            this.gameOver(from);
             return;
         }
     }
@@ -1022,7 +1036,7 @@ export class Denshi extends Phaser.Scene {
 
     // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る
     gameOver(from) {
-        if (this.isGameOver) {
+        if (this.isGameOver || IS_SCENE_DEBUG) {
             return;
         }
         this.isGameOver = true;
