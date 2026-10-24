@@ -1,3 +1,5 @@
+import { createEmptySaveData, encodeSpell } from '../saveData.js';
+
 export class Home extends Phaser.Scene {
 
     constructor() {
@@ -17,6 +19,7 @@ export class Home extends Phaser.Scene {
         this.load.image('characterRun3', 'assets/J-run-3.png');//J（主人公）
         this.load.image('characterRun4', 'assets/J-run-4.png');//J（主人公）
         this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
+        this.load.image('tangye', 'assets/tangye.png');//取得単位アイコン
     }
 
     create() {
@@ -56,36 +59,62 @@ export class Home extends Phaser.Scene {
         }
 
         // 学科ブロック。順番はセーブデータのステージ番号と同じ
+        const saveData = this.registry.get('saveData') ?? createEmptySaveData();
+        const totalTangye = saveData.stages.reduce((sum, count) => sum + count, 0);
+        const FINAL_REQUIRED = 150;//ファイナルが現れる合計取得数
         const stages = [
-            { label: '機械工学科', scene: 'Mechanical' },
-            { label: '電気工学科', scene: 'Electrical' },
-            { label: '電子工学科', scene: 'Denshi' },
-            { label: '情報工学科', scene: 'Joho' },
-            { label: '物質工学科', scene: 'Chemical' },
+            { label: '機械工学科', scene: 'Mechanical', saveIndex: 0 },
+            { label: '電気工学科', scene: 'Electrical', saveIndex: 1 },
+            { label: '電子工学科', scene: 'Denshi', saveIndex: 2 },
+            { label: '情報工学科', scene: 'Joho', saveIndex: 3 },
+            { label: '物質工学科', scene: 'Chemical', saveIndex: 4 },
+            { label: 'ファイナル', scene: 'Final', hidden: totalTangye < FINAL_REQUIRED },
+            { label: '終了', scene: 'Ending' },
         ];
-        const blockWidth = 240;
+        const visibleStages = stages.filter(stage => !stage.hidden);
+        const slotCount = visibleStages.length;//表示するブロックだけを等間隔に並べる
+        const blockWidth = 175;
+        const sideMargin = 5;//画面端との余白（7個並べても重ならない値）
         const blockHeight = 35;
         // ジャンプで頭が届く高さ（最高点より少し低い位置）にブロックの下面を置く
         const jumpHeight = this.jumpSpeed ** 2 / (2 * this.gravity);
         const blockBottomY = this.groundY - this.character.displayHeight - jumpHeight * 0.6;
-        this.blocks = stages.map((stage, i) => {
-            const x = this.scale.width / stages.length * (i + 0.5);
+        const labelStyle = {
+            fontSize: '22px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4,
+            padding: { top: 6, bottom: 6 }
+        };
+        this.blocks = [];
+        visibleStages.forEach((stage, i) => {
+            const x = sideMargin + (this.scale.width - sideMargin * 2) / slotCount * (i + 0.5);
             const y = blockBottomY - blockHeight / 2;
             const block = this.add.tileSprite(x, y, blockWidth, blockHeight, 'kuchu1');
             block.setData('scene', stage.scene);
-            const label = this.add.text(x, y, stage.label, {
-                fontSize: '22px',
-                color: '#ffffff',
-                stroke: '#000000',
-                strokeThickness: 4,
-                padding: { top: 6, bottom: 6 }
-            }).setOrigin(0.5);
-            block.setData('label', label);
-            return block;
+            block.setData('label', this.add.text(x, y, stage.label, labelStyle).setOrigin(0.5));
+            if (stage.saveIndex !== undefined) {
+                const countLabel = this.add.text(x, y - 58, `取得単位数: ${saveData.stages[stage.saveIndex]}/40`, {
+                    ...labelStyle,
+                    fontSize: '16px'
+                }).setOrigin(0.5);
+                block.setData('countLabel', countLabel);
+            }
+            this.blocks.push(block);
         });
 
         this.add.text(this.scale.width / 2, 60, '学科のブロックを下からジャンプでつついてね', {
             fontSize: '32px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 5,
+            padding: { top: 8, bottom: 8 }
+        }).setOrigin(0.5);
+
+        
+
+        this.add.text(this.scale.width / 2, 150, `合計取得単位数: ${totalTangye}`, {
+            fontSize: '28px',
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 5,
@@ -143,6 +172,11 @@ export class Home extends Phaser.Scene {
                 // 通常のブロックと同じ：頭がブロックの下面で止まり、上向きの速度を失って落ちる
                 this.character.y = blockBounds.bottom + halfHeight;
                 this.velocityY = 0;
+                // 遷移先のシーンがまだ無いブロックは、つついても遷移しない
+                if (!this.scene.manager.keys[block.getData('scene')]) {
+                    this.bumpBlock(block);
+                    return;
+                }
                 this.isLeaving = true;
                 this.character.anims.stop();
                 this.character.setTexture('characterStand');

@@ -1,4 +1,4 @@
-import { createEmptySaveData, encodeSaveData } from '../saveData.js';
+import { IS_SCENE_DEBUG, createEmptySaveData, encodeSaveData } from '../saveData.js';
 
 export class Denshi extends Phaser.Scene {
 
@@ -24,6 +24,8 @@ export class Denshi extends Phaser.Scene {
         this.load.image('block', 'assets/block-one.png');
         this.load.image('report1', 'assets/report-1.png');//レポート
         this.load.image('enadori1', 'assets/enadori-1.png');//エナドリ
+        this.load.image('DenshiDamageItem', 'assets/D-condenser.png');//電子工学科専用damageアイテム
+        this.load.image('DenshiDamageExplosion', 'assets/D-condenser-bakuhatsu.png');//コンデンサーの爆発表示
     }
 
     create() {
@@ -60,19 +62,22 @@ export class Denshi extends Phaser.Scene {
         // 収集アイテム
         this.stageIndex = 2;//このステージの番号（0 機械, 1 電気, 2 電子, 3 情報, 4 物質）
         this.saveData = this.registry.get('saveData') ?? createEmptySaveData();//保存済みデータ（初回は全て0）
-        this.collectedNow = new Array(40).fill(false);//今回のプレイで取得したタン・イーの番号
+        this.stageTangyeRecord = this.saveData.stages[this.stageIndex];
+        this.runTangyeCount = 0;
         this.itemPreviousPositions = new WeakMap();
         this.tangyeGroup = this.add.group();//配置したタン・イーの管理用
         this.AkatenGroup = this.add.group();//配置した赤点の管理用
         this.AotenGroup = this.add.group();//配置した青点の管理用
         this.reportGroup = this.add.group();//配置したレポートの管理用
         this.enadoriGroup = this.add.group();//配置したエナドリ（判定用の箱）の管理用
-        this.tangyeCount = this.saveData.totalTangye;//取得したタン・イーの合計数
+        this.departmentDamageGroup = this.add.group();//学科専用damageアイテムの管理用
+        this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
         this.placeAllMoveTangye();//未取得の動くタン・イーを配置
         this.placeAllAkaten();
         this.placeAllAoten();
         this.placeAllReports();
+        this.placeAllDepartmentDamage();
         this.placeAllEnadori();
         this.startEnadoriSpawner();
 
@@ -228,7 +233,7 @@ export class Denshi extends Phaser.Scene {
             this.isGrounded = true;//地面にいることを示す
         }
 
-        this.updateHorizontalMovers(deltaSeconds);
+        this.updateMovers(deltaSeconds);
         this.updateEnadori(deltaSeconds);
         this.resolveItemCollisions();
 
@@ -251,9 +256,9 @@ export class Denshi extends Phaser.Scene {
                 if (tangye.getData('moving')) {//動くタン・イーに当たった
                     this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
                 }
-                this.collectedNow[tangye.getData('number')] = true;//取得した番号を記録
+                this.runTangyeCount += 1;
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
-                this.tangyeCount += 1;
+                this.tangyeCount = this.runTangyeCount;
                 this.updateTangyeCountDisplay();
             }
         });
@@ -310,6 +315,7 @@ export class Denshi extends Phaser.Scene {
         // レポート・エナドリ：上から踏むと消えて跳ね上がり、横や下から当たるとダメージ
         this.reportGroup.getChildren().slice().forEach(report => this.        handleStompableContact(report, playerGetDamage, 'report'));
                 this.enadoriGroup.getChildren().slice().forEach(enadori => this.handleStompableContact(enadori, playerGetDamage, 'enadori'));
+        this.departmentDamageGroup.getChildren().slice().forEach(item => this.handleStompableContact(item, playerGetDamage, 'departmentDamage'));
 
         // 地面のスクロール
         this.leftXText.setText(`X: ${Math.round(this.cameras.main.scrollX)}`);
@@ -318,16 +324,40 @@ export class Denshi extends Phaser.Scene {
 
     // 上から踏むと消滅してジャンプ、横や下から当たるとダメージを受けて相手は消える
     handleStompableContact(target, playerBounds, kind) {
+        if (target.getData('spent')) {
+            return;
+        }
         if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, target.getBounds())) {
             return;
         }
         if (this.isHitFromAbove(target)) {
             target.destroy();
             this.characterStandVelocityY = -this.jumpSpeed;
-        } else if (!this.isInvulnerable) {
-            this.showDamageCause(kind, target);
-            this.getDamage(0);
-            target.destroy();
+        } else {
+            const effectTexture = target.getData('damageEffectTexture');
+            if (effectTexture) {
+                if (!this.isInvulnerable) {
+                    this.showDamageCause(kind, target);
+                    this.getDamage(0);
+                }
+                this.departmentDamageGroup.remove(target, false, false);
+                this.itemPreviousPositions.delete(target);
+                target.setData('spent', true).setData('moving', false).setTexture(effectTexture);
+                const image = this.textures.get(effectTexture).getSourceImage();
+                target.setScale(Math.min(70 / image.width, 55 / image.height));
+                target.setAlpha(1);
+                this.tweens.add({
+                    targets: target,
+                    alpha: 0,
+                    delay: 150,
+                    duration: 500,
+                    onComplete: () => target.destroy(),
+                });
+            } else if (!this.isInvulnerable) {
+                this.showDamageCause(kind, target);
+                this.getDamage(0);
+                target.destroy();
+            }
         }
     }
 
@@ -337,6 +367,7 @@ export class Denshi extends Phaser.Scene {
         aoten: '青点... 再試なし...',
         report: '理不尽レポートを喰らった',
         enadori: 'カフェインの過剰摂取！寝なさい！',
+        departmentDamage: '過電圧を加えてしまった！コンデンサ爆発！',
     };
 
     // 画面上部に、ダメージを受けた相手のメッセージを一定時間表示する
@@ -538,13 +569,14 @@ export class Denshi extends Phaser.Scene {
         }
     }
 
-    // 左右に動く赤点・青点・レポートを進める。壁に横からぶつかったら、同じ動きのまま進む向きだけ逆にする
-    updateHorizontalMovers(deltaSeconds) {
+    // 赤点・青点・レポートを動かす。ブロックに当たると進む向きを反転する
+    updateMovers(deltaSeconds) {
         const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
         const movers = [
             ...this.AkatenGroup.getChildren(),
             ...this.AotenGroup.getChildren(),
             ...this.reportGroup.getChildren(),
+            ...this.departmentDamageGroup.getChildren(),
         ];
         const angularSpeed = Math.PI / 1.5;//1.5秒で端から端まで（Sine.easeInOutの往復と同じ）
 
@@ -555,23 +587,27 @@ export class Denshi extends Phaser.Scene {
             }
 
             const nextPhase = swing.phase + swing.direction * angularSpeed * deltaSeconds;
-            const nextX = swing.centerX - swing.range * Math.cos(nextPhase);
-            const halfWidth = item.getBounds().width / 2;
             const bounds = item.getBounds();
-
-            const hitsWall = solidBlocks.some(block => {
+            const offset = swing.range * Math.cos(nextPhase);
+            const nextX = swing.axis === 'vertical' ? swing.centerX : swing.centerX - offset;
+            const nextY = swing.axis === 'vertical' ? swing.centerY - offset : swing.centerY;
+            const halfWidth = bounds.width / 2;
+            const halfHeight = bounds.height / 2;
+            const hitsBlock = solidBlocks.some(block => {
                 const blockBounds = block.getBounds();
-                const overlapsY = bounds.bottom > blockBounds.top && bounds.top < blockBounds.bottom;
-                const overlapsNextX = nextX + halfWidth > blockBounds.left && nextX - halfWidth < blockBounds.right;
-                return overlapsY && overlapsNextX;
+                return nextX + halfWidth > blockBounds.left &&
+                    nextX - halfWidth < blockBounds.right &&
+                    nextY + halfHeight > blockBounds.top &&
+                    nextY - halfHeight < blockBounds.bottom;
             });
 
-            if (hitsWall) {
+            if (hitsBlock) {
                 swing.direction *= -1;
                 return;
             }
             swing.phase = nextPhase;
             item.x = nextX;
+            item.y = nextY;
         });
     }
 
@@ -582,6 +618,7 @@ export class Denshi extends Phaser.Scene {
             ...this.AkatenGroup.getChildren(),
             ...this.AotenGroup.getChildren(),
             ...this.reportGroup.getChildren(),
+            ...this.departmentDamageGroup.getChildren(),
         ];
 
         items.forEach(item => {
@@ -655,17 +692,16 @@ export class Denshi extends Phaser.Scene {
         platforms.forEach(([x, y]) => this.placePlatform(x, y));
     }
 
-    // タン・イーを1個、番号と座標を指定して配置する
-    placeTangye(number, x, y) {
+    // タン・イーを1個、座標を指定して配置する
+    placeTangye(x, y) {
         const tangye = this.add.image(x, y, 'tangye');
         tangye.setScale(0.2);
-        tangye.setData('number', number);
         this.tangyeGroup.add(tangye);
         this.itemPreviousPositions.set(tangye, { x: tangye.x, y: tangye.y });
         return tangye;
     }
 
-    // タン・イーの座標一覧。配列の位置がそのまま番号（0〜）になる。30〜39は隠しブロック・赤点・青点用に空けてある
+    // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
             [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 180],
@@ -674,27 +710,20 @@ export class Denshi extends Phaser.Scene {
             [8150, 330],  [8300, 90],  [8400, 90], [9300, 400], [9750, 90],
             [10200, 400], [11200, 150], [11800, 90], [11800, 400],
         ];
-        positions.forEach(([x, y], number) => {
-            if (!this.saveData.stages[this.stageIndex][number]) {//取得済みの番号は配置しない
-                this.placeTangye(number, x, y);
-            }
+        positions.forEach(([x, y]) => {
+            this.placeTangye(x, y);
         });
     }
 
-    // 上下に動くタン・イーを配置する。番号は24〜29、30〜33を順に使う
+    // 上下に動くタン・イーを配置する
     placeAllMoveTangye() {
         // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
         const moves = [
             [1600, 350, 120], [4500, 350, 150], [5000, 300, 100], [5300, 350, 200], [5800, 200, 50],
             [6800, 350, 100], [7800, 400, 70], [8700, 100, 40], [10100, 200, 20], [12100, 100, 30],
         ];
-        const numbers = [24, 25, 26, 27, 28, 29, 30, 31, 32, 33];
         moves.forEach(([x, centerY, range], i) => {
-            const number = numbers[i];
-            if (this.saveData.stages[this.stageIndex][number]) {
-                return;
-            }
-            const tangye = this.placeTangye(number, x, centerY - range);
+            const tangye = this.placeTangye(x, centerY - range);
             tangye.setData('moving', true);
             tangye.setScale(0.3);//動くタン・イーは少し大きくする
             this.tweens.add({
@@ -709,57 +738,55 @@ export class Denshi extends Phaser.Scene {
         });
     }
 
-    placeAkaten(number, x, y) {
+    placeAkaten(x, y) {
         const Akaten = this.add.image(x, y, 'Akaten');
         Akaten.setScale(0.2);
-        Akaten.setData('number', number);
         this.AkatenGroup.add(Akaten);
         this.itemPreviousPositions.set(Akaten, { x: Akaten.x, y: Akaten.y });
         return Akaten;
     }
 
     placeAllAkaten() {
-        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [590, 2000, 80], [590, 3840, 20], [590, 10800, 40], 
+            [2000, 590, 80, 'horizontal'],
+            [3840, 590, 20, 'horizontal'],
+            [10800, 590, 40, 'horizontal'],
         ];
-        const numbers = [34,35,36];
-        moves.forEach(([y, centerX, range], i) => {
-            const number = numbers[i];
-            if (this.saveData.stages[this.stageIndex][number]) {
-                return;
-            }
-            const akaten = this.placeAkaten(number,  centerX - range, y);
+        moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
+            const akaten = this.placeAkaten(
+                axis === 'vertical' ? centerX : centerX - range,
+                axis === 'vertical' ? centerY - range : centerY
+            );
             akaten.setData('moving', true);
             akaten.setScale(0.3);//動くタン・イーは少し大きくする
-            akaten.setData('swing', { centerX, range, phase: 0, direction: 1 });
+            akaten.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         });
     }
 
-    placeAoten(number, x, y) {
+    placeAoten(x, y) {
         const Aoten = this.add.image(x, y, 'Aoten');
         Aoten.setScale(0.2);
-        Aoten.setData('number', number);
         this.AotenGroup.add(Aoten);
         this.itemPreviousPositions.set(Aoten, { x: Aoten.x, y: Aoten.y });
         return Aoten;
     }
 
     placeAllAoten() {
-        // [y座標, 左右運動の中心x, 中心から左右に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [590, 7300, 100], [200, 8500, 50], [590, 12400, 100], 
+            [7300, 590, 100, 'horizontal'],
+            [8500, 200, 50, 'horizontal'],
+            [12400, 590, 100, 'horizontal'],
         ];
-        const numbers = [37,38,39];
-        moves.forEach(([y, centerX, range], i) => {
-            const number = numbers[i];
-            if (this.saveData.stages[this.stageIndex][number]) {
-                return;
-            }
-            const aoten = this.placeAoten(number,  centerX - range, y);
+        moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
+            const aoten = this.placeAoten(
+                axis === 'vertical' ? centerX : centerX - range,
+                axis === 'vertical' ? centerY - range : centerY
+            );
             aoten.setData('moving', true);
             aoten.setScale(0.3);//動くタン・イーは少し大きくする
-            aoten.setData('swing', { centerX, range, phase: 0, direction: 1 });
+            aoten.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         });
     }
 
@@ -768,7 +795,7 @@ export class Denshi extends Phaser.Scene {
         const report = this.add.image(centerX - range, y, 'report1');
         report.setScale(0.5);//レポートのサイズ（元画像108×88）
         report.setData('moving', true);
-        report.setData('swing', { centerX, range, phase: 0, direction: 1 });
+        report.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
         this.reportGroup.add(report);
         this.itemPreviousPositions.set(report, { x: report.x, y: report.y });
         return report;
@@ -781,6 +808,24 @@ export class Denshi extends Phaser.Scene {
             [11700, this.groundY-22, 200],[12100, this.groundY-22, 150]
         ];
         reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
+    }
+
+    // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
+    placeAllDepartmentDamage() {
+        const items = [
+            [3500, this.groundY - 25, 120, '過電圧を加えてしまった！コンデンサ爆発！'],
+        ];
+        items.forEach(([centerX, y, range, damageMessage]) => {
+            const item = this.add.image(centerX - range, y, 'DenshiDamageItem');
+            const image = this.textures.get('DenshiDamageItem').getSourceImage();
+            item.setScale(Math.min(70 / image.width, 55 / image.height));
+            item.setData('moving', true);
+            item.setData('damageMessage', damageMessage);
+            item.setData('damageEffectTexture', 'DenshiDamageExplosion');
+            item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
+            this.departmentDamageGroup.add(item);
+            this.itemPreviousPositions.set(item, { x: item.x, y: item.y });
+        });
     }
 
     // エナドリを1個配置する。左へ転がり続け、ときどき跳ねる。x, yは判定用の箱の中心
@@ -801,7 +846,7 @@ export class Denshi extends Phaser.Scene {
     // エナドリの一覧。[x, y]。yを省略すると地面の上に置く
     placeAllEnadori() {
         const enadori = [
-            [3000]
+            [3000],
         ];
         enadori.forEach(([x, y]) => this.placeEnadori(x, y ?? this.groundY - 20));
     }
@@ -941,7 +986,7 @@ export class Denshi extends Phaser.Scene {
 
         this.life = Math.max(this.life -1 ,0 );
         this.updateLifeDisplay();
-        if (this.life > 0 && from === 0) {
+        if ((this.life > 0 || IS_SCENE_DEBUG) && from === 0) {
             this.isInvulnerable = true;
             this.isDamageShowing = true;
             this.mustReleaseMovementKeys = true;
@@ -990,7 +1035,7 @@ export class Denshi extends Phaser.Scene {
 
     // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る
     gameOver(from) {
-        if (this.isGameOver) {
+        if (this.isGameOver || IS_SCENE_DEBUG) {
             return;
         }
         this.isGameOver = true;
@@ -1033,23 +1078,23 @@ export class Denshi extends Phaser.Scene {
             });
         }
     }
-    // ステージ完了時に呼ぶ。今回の取得分をセーブデータに反映し、ビット列を返す
+    // ステージ完了時に取得数の最高記録を保存し、ビット列を返す
     completeStage() {
-        const stage = this.saveData.stages[this.stageIndex];
-        this.collectedNow.forEach((collected, number) => {
-            if (collected) {
-                stage[number] = true;
-            }
-        });
+        this.stageTangyeRecord = Math.max(this.stageTangyeRecord, this.runTangyeCount);
+        this.saveData.stages[this.stageIndex] = this.stageTangyeRecord;
         this.saveData.completedCount += 1;
-        this.saveData.totalTangye = this.saveData.stages.flat().filter(Boolean).length;
+        this.saveData.totalTangye = this.saveData.stages.reduce((sum, count) => sum + count, 0);
         this.registry.set('saveData', this.saveData);
         return encodeSaveData(this.saveData);
     }
 
     // ステージの右端から出て、1秒かけて暗転しHomeへ戻る
     leaveStage() {
+        if (this.isLeaving) {
+            return;
+        }
         this.isLeaving = true;
+        this.completeStage();
         this.cameras.main.fadeOut(1000, 0, 0, 0);
         this.cameras.main.once('camerafadeoutcomplete', () => {
             this.scene.start('Home', { fromStage: true });
