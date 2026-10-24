@@ -84,7 +84,7 @@ export class Mechanical extends Phaser.Scene {
 
 
         // 取得数の表示（右上に固定）：タン・イーの画像＋数字
-        this.tangyeCountText = this.add.text(this.scale.width - 20, 20, String(this.tangyeCount), {
+        this.tangyeCountText = this.add.text(this.scale.width - 20, 20, `${this.tangyeCount}/40`, {
             fontSize: '32px',
             color: '#ffffff',
             stroke: '#000000',
@@ -281,7 +281,7 @@ export class Mechanical extends Phaser.Scene {
         const playerGetDamage = this.characterStand.getBounds();
         this.AkatenGroup.getChildren().slice().forEach(akaten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, akaten.getBounds())) {//J（主人公）とアカテンが衝突した場合
-                if (akaten.getData('moving') && this.isHitFromAbove(akaten)) {
+                if (akaten.getData('moving') && this.isHitFromAbove(akaten, true)) {
                     akaten.setTexture('tangye');
                     akaten.setScale(0.2);
                     akaten.setData('moving', false);
@@ -305,7 +305,7 @@ export class Mechanical extends Phaser.Scene {
 
         this.AotenGroup.getChildren().slice().forEach(aoten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, aoten.getBounds())) {//J（主人公）とアオテンが衝突した場合
-                if (aoten.getData('moving') && this.isHitFromAbove(aoten)) {
+                if (aoten.getData('moving') && this.isHitFromAbove(aoten, true)) {
                     aoten.setTexture('tangye');
                     aoten.setScale(0.2);
                     aoten.setData('moving', false);
@@ -340,7 +340,7 @@ export class Mechanical extends Phaser.Scene {
         if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, target.getBounds())) {
             return;
         }
-        if (this.isHitFromAbove(target)) {
+        if (this.isHitFromAbove(target, true)) {
             target.destroy();
             this.characterStandVelocityY = -this.jumpSpeed * 1.2;
         } else if (!this.isInvulnerable) {
@@ -469,7 +469,7 @@ export class Mechanical extends Phaser.Scene {
 
     // 取得数の数字を更新し、画像を数字の左隣に置く
     updateTangyeCountDisplay() {
-        this.tangyeCountText.setText(String(this.tangyeCount));
+        this.tangyeCountText.setText(`${this.tangyeCount}/40`);
         this.tangyeCountIcon.x = this.tangyeCountText.x - this.tangyeCountText.width - 10 - this.tangyeCountIcon.displayWidth / 2;
     }
 
@@ -985,14 +985,15 @@ export class Mechanical extends Phaser.Scene {
     }
 
     // キャラクターが上から対象に当たったかを判定する
-    isHitFromAbove(target) {
+    isHitFromAbove(target, allowUpperHalf = false) {
         const playerBounds = this.characterStand.getBounds();
         const targetBounds = target.getBounds();
         const previousBottomY = this.previousCharacterY + this.playerHalfHeight;
         const currentBottomY = this.characterStand.y + this.playerHalfHeight;
+        const landingY = allowUpperHalf ? targetBounds.centerY : targetBounds.top;
 
         return this.characterStandVelocityY >= 0 &&
-            previousBottomY <= targetBounds.top &&
+            previousBottomY <= landingY &&
             currentBottomY >= targetBounds.top &&
             playerBounds.right > targetBounds.left &&
             playerBounds.left < targetBounds.right;
@@ -1109,11 +1110,21 @@ export class Mechanical extends Phaser.Scene {
         }
     }
     // ステージ完了時に取得数の最高記録を保存し、ビット列を返す
-    completeStage() {
-        this.stageTangyeRecord = Math.max(this.stageTangyeRecord, this.runTangyeCount);
+    saveStageRecord() {
+        this.stageTangyeRecord = Math.max(
+            this.saveData.stages[this.stageIndex],
+            this.stageTangyeRecord,
+            this.runTangyeCount
+        );
         this.saveData.stages[this.stageIndex] = this.stageTangyeRecord;
-        this.saveData.completedCount += 1;
         this.saveData.totalTangye = this.saveData.stages.reduce((sum, count) => sum + count, 0);
+        this.registry.set('saveData', this.saveData);
+        return encodeSaveData(this.saveData);
+    }
+
+    completeStage() {
+        this.saveStageRecord();
+        this.saveData.completedCount += 1;
         this.registry.set('saveData', this.saveData);
         return encodeSaveData(this.saveData);
     }
