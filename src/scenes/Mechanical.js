@@ -1016,7 +1016,7 @@ export class Mechanical extends Phaser.Scene {
 
         this.life = Math.max(this.life -1 ,0 );
         this.updateLifeDisplay();
-        if (this.life > 0 && from === 0) {
+        if ((this.life > 0 || IS_SCENE_DEBUG) && from === 0) {
             this.isInvulnerable = true;
             this.isDamageShowing = true;
             this.mustReleaseMovementKeys = true;

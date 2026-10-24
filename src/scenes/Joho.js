@@ -569,7 +569,7 @@ export class Joho extends Phaser.Scene {
     placeAllHiddenBlocks() {
         // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
-            [450, this.groundY - 350, 3],
+            [450, this.groundY - 350, 3],[2800,50,3]
         ];
         hiddenBlocks.forEach(([x, y, blockCount]) =>
             this.placeHiddenBlock(x, y, blockCount));
@@ -719,7 +719,7 @@ export class Joho extends Phaser.Scene {
     placeAllPlatforms() {
         const platforms = [
             [800, 460, 7],[1000, 300, 7],[1200, 140, 8],[1800,140,8],[3465,572.5, 4],
-            [3352.5, 397.5, 3],[3762.5,257.5,15],[4565,257.5,10],[8000,450,5],[8000,140,5],
+            [3302.5, 397.5, 3],[3762.5,257.5,15],[4565,257.5,10],[4070,740,4],[6650,350,3],[8000,450,5],[8000,140,5],
             [11700,450,5],[11700,300,5],[11700,150,5]
         ];
         platforms.forEach(([x, y, blockCount]) => this.placePlatform(x, y, blockCount));
@@ -728,7 +728,7 @@ export class Joho extends Phaser.Scene {
     // 壁を [左端X, 底辺Y, ブロック数] の一覧で指定する。ジャンプで越えられるのは5個まで
     placeAllWalls() {
         const walls = [
-            [3300, 450, 12],[3500,590,10],[4740,590,10],[5000,450,15],[7000,this.groundY, 4],
+            [3250, 450, 11],[3500,590,10],[4740,590,10],[5000,450,15],[7000,this.groundY, 4],
             [7500, this.groundY, 4]
         ];
         walls.forEach(([x, y, blockCount]) => this.placeWall(x, y, blockCount));
@@ -746,26 +746,35 @@ export class Joho extends Phaser.Scene {
     // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
-            [450, 50]
+            [450, 50],[2000,140],[2200,340],[2400,540],[5400,20],[5950,300],[6575,20],
+            [7267.5,this.groundY-25],[8000,50],[10500,320],[10700,320],[10900,320]
         ];
         positions.forEach(([x, y]) => {
             this.placeTangye(x, y);
         });
     }
 
-    // 上下に動くタン・イーを配置する
+    // 上下または左右に動くタン・イーを配置する
     placeAllMoveTangye() {
-        // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。省略時は 'vertical'、左右は 'horizontal'
         const moves = [
-            [1600, 350, 120]
+            [1800, 650, 50 ],[2700, 460,50,'horizontal'],[2900, 340, 50,'horizontal'],[2700, 220 , 50,'horizontal' ],
+            [4300, 300, 0, 'horizontal'],[4300,450,0,'horizontal'],[4300,600,0,'horizontal'],
+            [5100, 400, 0, 'horizontal'],[5100,150,0,'horizontal'],[7800,500,0,'horizontal'],
+            [7800,350,0,'horizontal'],[7800,200,0,'horizontal'],[9500, this.groundY-25,100,'horizontal'],
+            [11400,250,0,'horizontal'],[11900,150,-50,'horizontal'],[12050,150,50,'horizontal'],[12300,150,-50,'horizontal'],
+            [12450,150,50,'horizontal'],[12600,150,-50,'horizontal']
         ];
-        moves.forEach(([x, centerY, range], i) => {
-            const tangye = this.placeTangye(x, centerY - range);
+        moves.forEach(([centerX, centerY, range, axis = 'vertical'], i) => {
+            const tangye = this.placeTangye(
+                axis === 'horizontal' ? centerX - range : centerX,
+                axis === 'horizontal' ? centerY : centerY - range
+            );
             tangye.setData('moving', true);
             tangye.setScale(0.3);//動くタン・イーは少し大きくする
             this.tweens.add({
                 targets: tangye,
-                y: centerY + range,
+                ...(axis === 'horizontal' ? { x: centerX + range } : { y: centerY + range }),
                 duration: 1500,
                 ease: 'Sine.easeInOut',
                 yoyo: true,
@@ -786,7 +795,7 @@ export class Joho extends Phaser.Scene {
     placeAllAkaten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [2000, 430, 150, 'vertical']
+            [1450, 250, 50, 'vertical'],[1650,450,50,'vertical'],[7800,50,0,'horizontal']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const akaten = this.placeAkaten(
@@ -810,7 +819,7 @@ export class Joho extends Phaser.Scene {
     placeAllAoten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [7300, 430, 150, 'vertical'],
+            [4887.5, 350, 60, 'horizontal'],[10300,this.groundY-25,50,'horizontal'],[12700,500,50,'vertical']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const aoten = this.placeAoten(
@@ -823,34 +832,50 @@ export class Joho extends Phaser.Scene {
         });
     }
 
-    // レポートを1個配置する。中心のx座標・y座標と、中心から左右に動く幅を指定する
-    placeReport(centerX, y, range) {
-        const report = this.add.image(centerX - range, y, 'report1');
+    // レポートを1個配置する。移動方向は 'horizontal' または 'vertical'
+    placeReport(centerX, centerY, range, axis = 'horizontal') {
+        const report = this.add.image(
+            axis === 'vertical' ? centerX : centerX - range,
+            axis === 'vertical' ? centerY - range : centerY,
+            'report1'
+        );
         report.setScale(0.5);//レポートのサイズ（元画像108×88）
         report.setData('moving', true);
-        report.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
+        report.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         this.reportGroup.add(report);
         this.itemPreviousPositions.set(report, { x: report.x, y: report.y });
         return report;
     }
 
-    // レポートの一覧。[中心x, y, 中心から左右に動く幅]。1つずつ設定する
+    // レポートの一覧。[中心x, 中心y, 移動幅, 移動方向]。省略時は 'horizontal'、上下は 'vertical'
     placeAllReports() {
         const reports = [
-            [450, this.groundY-25, 50],[800,414,122.5],[1000,254,-122.5],[1200,94,140]
+            [1800, 100, 140,],[3762.5, 210, 245],[5400,500,50],[5400,300,-50],[5400,100,50],
+            [5800,300,200,'vertical'],[6100,300,-200,'vertical'],[6575,500,30,'vertical'],
+            [6575,200,30,'vertical'],[8200,350,10,'horizontal'],[8500,this.groundY-300,50,'vertical'],
+            [10500, 220,100,'vertical'],[10700,320,300,'horizontal'],[10700,220,100,'vertical'],[10900,220,100,'vertical']
         ];
-        reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
+        reports.forEach(([centerX, centerY, range, axis]) => this.placeReport(centerX, centerY, range, axis));
     }
 
     // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
     placeAllDepartmentDamage() {
         const items = [
-            [3500, this.groundY - 25, 120, 'セミコロンが抜けている！'],
+            [450, this.groundY-15, 50, '見つけられないエラー：セミコロン抜け'],
+            [800,424,122.5, '見つけられないエラー：セミコロン抜け'],
+            [1000,264,-122.5, '見つけられないエラー：セミコロン抜け'],
+            [1200,104,140, '見つけられないエラー：セミコロン抜け'],
+            [5950,500,150, '見つけられないエラー：セミコロン抜け'],
+            [5950,100,-150, '見つけられないエラー：セミコロン抜け'],
+            [7167.5, this.groundY-15, -50, '見つけられないエラー：セミコロン抜け'],
+            [7367.5, this.groundY-15, 50, '見つけられないエラー：セミコロン抜け'],
+            [10300, this.groundY-250, 50, '見つけられないエラー：セミコロン抜け'],
+            [11400,100,0, '見つけられないエラー：セミコロン抜け']
         ];
         items.forEach(([centerX, y, range, damageMessage]) => {
             const item = this.add.image(centerX - range, y, 'JohoDamageItem');
             const image = this.textures.get('JohoDamageItem').getSourceImage();
-            item.setScale(Math.min(70 / image.width, 55 / image.height));
+            item.setScale(Math.min(35 / image.width, 27.5 / image.height));
             item.setData('moving', true);
             item.setData('damageMessage', damageMessage);
             item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
@@ -1017,7 +1042,7 @@ export class Joho extends Phaser.Scene {
 
         this.life = Math.max(this.life -1 ,0 );
         this.updateLifeDisplay();
-        if (this.life > 0 && from === 0) {
+        if ((this.life > 0 || IS_SCENE_DEBUG) && from === 0) {
             this.isInvulnerable = true;
             this.isDamageShowing = true;
             this.mustReleaseMovementKeys = true;
