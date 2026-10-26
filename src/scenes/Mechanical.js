@@ -33,6 +33,8 @@ export class Mechanical extends Phaser.Scene {
         this.isGameOver = false;
         this.isDamageShowing = false;
         this.isInvulnerable = false;
+        this.isPitRespawnProtected = false;
+        this.pitRespawnProtectionTimer = null;
         this.mustReleaseMovementKeys = false;
         this.damageTextureTimer = null;
         // 背景と地面
@@ -328,7 +330,9 @@ export class Mechanical extends Phaser.Scene {
         // レポート・エナドリ：上から踏むと消えて跳ね上がり、横や下から当たるとダメージ
         this.reportGroup.getChildren().slice().forEach(report => this.        handleStompableContact(report, playerGetDamage, 'report'));
                 this.enadoriGroup.getChildren().slice().forEach(enadori => this.handleStompableContact(enadori, playerGetDamage, 'enadori'));
-        this.departmentDamageGroup.getChildren().slice().forEach(item => this.handleStompableContact(item, playerGetDamage, 'departmentDamage'));
+        if (!this.isPitRespawnProtected) {
+            this.departmentDamageGroup.getChildren().slice().forEach(item => this.handleStompableContact(item, playerGetDamage, 'departmentDamage'));
+        }
 
         // 地面のスクロール
         this.leftXText.setText(`X: ${Math.round(this.cameras.main.scrollX)}`);
@@ -1008,6 +1012,12 @@ export class Mechanical extends Phaser.Scene {
         this.characterStand.y = this.characterStandBaseY;
         this.characterStandVelocityY = 0;
         this.isGrounded = true;
+        this.pitRespawnProtectionTimer?.remove(false);
+        this.isPitRespawnProtected = true;
+        this.pitRespawnProtectionTimer = this.time.delayedCall(1500, () => {
+            this.isPitRespawnProtected = false;
+            this.pitRespawnProtectionTimer = null;
+        });
     }
 
     getDamage(from){
