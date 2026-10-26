@@ -569,7 +569,7 @@ export class Joho extends Phaser.Scene {
     placeAllHiddenBlocks() {
         // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
-            [450, this.groundY - 350, 3],[2800,50,3]
+            [450, this.groundY - 350, 3],[2800,50,5],[3302.5, 397.5, 3],
         ];
         hiddenBlocks.forEach(([x, y, blockCount]) =>
             this.placeHiddenBlock(x, y, blockCount));
@@ -719,7 +719,7 @@ export class Joho extends Phaser.Scene {
     placeAllPlatforms() {
         const platforms = [
             [800, 460, 7],[1000, 300, 7],[1200, 140, 8],[1800,140,8],[3465,572.5, 4],
-            [3302.5, 397.5, 3],[3762.5,257.5,15],[4565,257.5,10],[4070,740,4],[6650,350,3],[8000,450,5],[8000,140,5],
+            [3762.5,257.5,15],[4565,257.5,10],[4070,740,4],[6650,350,3],[8000,450,5],[8000,140,5],
             [11700,450,5],[11700,300,5],[11700,150,5]
         ];
         platforms.forEach(([x, y, blockCount]) => this.placePlatform(x, y, blockCount));

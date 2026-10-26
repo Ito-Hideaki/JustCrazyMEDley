@@ -8,23 +8,23 @@ export class Chemical extends Phaser.Scene {
 
     preload() {
         this.load.image('background', 'assets/back1.png');//背景
-        this.load.image('ground1', 'assets/ground1.png');//地面（チョコ）
-        this.load.image('ChemicalcharacterStand', 'assets/C-stand.png');//J（主人公）
-        this.load.image('ChemicalcharacterDamage', 'assets/C-damage.png');//J（主人公）
-        this.load.image('ChemicalcharacterRun1', 'assets/C-run-1.png');//J（主人公）
-        this.load.image('ChemicalcharacterRun2', 'assets/C-run-2.png');//J（主人公）
-        this.load.image('ChemicalcharacterRun3', 'assets/C-run-3.png');//J（主人公）
-        this.load.image('ChemicalcharacterRun4', 'assets/C-run-4.png');//J（主人公）
+        this.load.image('ground1', 'assets/ground1.png');//地面
+        this.load.image('DenshicharacterStand', 'assets/C-stand.png');//J（主人公）
+        this.load.image('DenshicharacterDamage', 'assets/C-damage.png');//J（主人公）
+        this.load.image('DenshicharacterRun1', 'assets/C-run-1.png');//J（主人公）
+        this.load.image('DenshicharacterRun2', 'assets/C-run-2.png');//J（主人公）
+        this.load.image('DenshicharacterRun3', 'assets/C-run-3.png');//J（主人公）
+        this.load.image('DenshicharacterRun4', 'assets/C-run-4.png');//J（主人公）
         this.load.image('tangye', 'assets/tangye.png');//タン・イー
         this.load.image('Akaten', 'assets/Akaten.png');//赤点
         this.load.image('Aoten', 'assets/Aoten.png');//青点
-        this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
-        this.load.image('block', 'assets/block-one.png');//壁・隠しブロック
         this.load.image('gameover', 'assets/gameover.png');
         this.load.image('life', 'assets/life.png');//ライフアイコン
-        this.load.image('ChemicalDamageItem', 'assets/C-doku.png');//物質工学科専用damageアイテム
+        this.load.image('block', 'assets/block-one.png');
         this.load.image('report1', 'assets/report-1.png');//レポート
-        this.load.image('enadori1', 'assets/enadori-1.png');//エナドリ
+        this.load.image('enadori1', 'assets/enadori-2.png');//エナドリ
+        this.load.image('DenshiDamageItem', 'assets/C-doku-stand.png');//電子工学科専用damageアイテム
+        this.load.image('DenshiDamageExplosion', 'assets/C-doku.png');//電子工学科専用damageエフェクト
     }
 
     create() {
@@ -48,7 +48,7 @@ export class Chemical extends Phaser.Scene {
         this.background.setScrollFactor(0);
 
         // ワールドと操作・物理設定
-        this.moveSpeed =600;
+        this.moveSpeed =650;
         this.cursors = this.input.keyboard.createCursorKeys();
         this.gravity = 3000;//重力
         this.jumpSpeed = 1100;//ジャンプ速度
@@ -129,17 +129,17 @@ export class Chemical extends Phaser.Scene {
         }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
 
         // プレイヤー
-        this.characterStand = this.add.sprite(220, 0, 'ChemicalcharacterStand');//J（主人公）を配置
+        this.characterStand = this.add.sprite(220, 0, 'DenshicharacterStand');//J（主人公）を配置
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
         this.playerHalfHeight = this.characterStand.displayHeight / 2;//判定用の高さ（画像が切り替わっても変えない）
         this.characterStandBaseY = this.groundY - this.playerHalfHeight;
         this.characterStand.y = this.characterStandBaseY;
         this.previousCharacterX = this.characterStand.x;
         this.previousCharacterY = this.characterStand.y;
-        if (!this.anims.exists('ChemicalRun')) {
+        if (!this.anims.exists('DenshiRun')) {
             this.anims.create({
-                key: 'ChemicalRun',
-                frames: ['ChemicalcharacterRun1', 'ChemicalcharacterRun2', 'ChemicalcharacterRun3', 'ChemicalcharacterRun4'].map(key => ({ key })),
+                key: 'DenshiRun',
+                frames: ['DenshicharacterRun1', 'DenshicharacterRun2', 'DenshicharacterRun3', 'DenshicharacterRun4'].map(key => ({ key })),
                 frameRate: 10,
                 repeat: -1
             });
@@ -337,16 +337,42 @@ export class Chemical extends Phaser.Scene {
 
     // 上から踏むと消滅してジャンプ、横や下から当たるとダメージを受けて相手は消える
     handleStompableContact(target, playerBounds, kind) {
+        if (target.getData('spent')) {
+            return;
+        }
         if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, target.getBounds())) {
             return;
         }
         if (this.isHitFromAbove(target)) {
             target.destroy();
             this.characterStandVelocityY = -this.jumpSpeed * 1.2;
-        } else if (!this.isInvulnerable) {
-            this.showDamageCause(kind, target);
-            this.getDamage(0);
-            target.destroy();
+        } else {
+            const effectTexture = target.getData('damageEffectTexture');
+            if (effectTexture) {
+                if (!this.isInvulnerable) {
+                    this.showDamageCause(kind, target);
+                    this.getDamage(0);
+                }
+                this.departmentDamageGroup.remove(target, false, false);
+                this.itemPreviousPositions.delete(target);
+                target.setData('spent', true).setData('moving', false).setTexture(effectTexture);
+                const image = this.textures.get(effectTexture).getSourceImage();
+                target.setScale(Math.min(70 / image.width, 55 / image.height));
+                target.setFlipX(this.characterStand.x > target.x);
+                target.setY(this.groundY - target.displayHeight / 2);
+                target.setAlpha(1);
+                this.tweens.add({
+                    targets: target,
+                    alpha: 0,
+                    delay: 150,
+                    duration: 500,
+                    onComplete: () => target.destroy(),
+                });
+            } else if (!this.isInvulnerable) {
+                this.showDamageCause(kind, target);
+                this.getDamage(0);
+                target.destroy();
+            }
         }
     }
 
@@ -356,7 +382,7 @@ export class Chemical extends Phaser.Scene {
         aoten: '青点... 再試なし...',
         report: '理不尽レポートを喰らった',
         enadori: 'カフェインの過剰摂取！寝なさい！',
-        departmentDamage: '物質工学科の専用アイテムにぶつかった！',
+        departmentDamage: '情報工学科の専用アイテムにぶつかった！',
     };
 
     // 画面上部に、ダメージを受けた相手のメッセージを一定時間表示する
@@ -392,11 +418,11 @@ export class Chemical extends Phaser.Scene {
             this.characterStand.x += direction * this.moveSpeed * deltaSeconds;
             this.characterStand.setFlipX(direction < 0);
             if (!this.isDamageShowing && !this.characterStand.anims.isPlaying) {
-                this.characterStand.play('ChemicalRun');
+                this.characterStand.play('DenshiRun');
             }
         } else if (!this.isDamageShowing) {
             this.characterStand.anims.stop();
-            this.characterStand.setTexture('ChemicalcharacterStand');
+            this.characterStand.setTexture('DenshicharacterStand');
         }
 
         this.characterStand.x = Phaser.Math.Clamp(
@@ -481,7 +507,7 @@ export class Chemical extends Phaser.Scene {
     // 落とし穴を [左端X, 幅] の一覧で指定する。3個。穴の部分だけ地面を作らない
     placeAllPits() {
         const pits = [
-            [4500, 200], [5100, 400], [9100, 1400],
+            [600, 210],[1100,210],[5500,2100],[11540,600]
         ];
         pits.forEach(([x, width]) => this.pits.push({ left: x, right: x + width }));
 
@@ -501,15 +527,27 @@ export class Chemical extends Phaser.Scene {
         }
         const ground = this.add.tileSprite(left, this.groundY, width, this.groundHeight, 'ground1').setOrigin(0, 0);
         ground.tilePositionX = left;
-        this.add.rectangle(left, this.groundY, width, 6, 0x75c645).setOrigin(0, 0);//地面の境界
     }
 
 
-    // 空中ブロックを1個、指定した座標に配置する
-    placePlatform(x, y) {
-        const platform = this.add.tileSprite(x, y, 275, 35, 'kuchu1');
-        this.platformGroup.add(platform);
-        return platform;
+    // 指定した中心座標に、block-oneを横に並べて空中ブロックを配置する
+    placePlatform(x, y, blockCount = 8) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(blockCount) || blockCount < 1) {
+            throw new RangeError('placePlatform requires finite coordinates and a positive integer blockCount');
+        }
+
+        const blockWidth = this.textures.get('block').getSourceImage().width;
+        const blocks = [];
+        for (let i = 0; i < blockCount; i++) {
+            const block = this.add.image(
+                x - (blockCount * blockWidth) / 2 + (i + 0.5) * blockWidth,
+                y,
+                'block'
+            );
+            this.platformGroup.add(block);
+            blocks.push(block);
+        }
+        return blocks;
     }
 
     // 底辺の左端座標とブロック数を指定して、縦に壁を配置する
@@ -558,6 +596,7 @@ export class Chemical extends Phaser.Scene {
     placeAllHiddenBlocks() {
         // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
+            [4845, 460, 2],[6550,150,8],[8005,460,2],[10240,100,3],[11492.5,460,1]
         ];
         hiddenBlocks.forEach(([x, y, blockCount]) =>
             this.placeHiddenBlock(x, y, blockCount));
@@ -703,14 +742,14 @@ export class Chemical extends Phaser.Scene {
         });
     }
 
-    // 空中ブロック15個の座標一覧
+    // 空中ブロックの中心座標と、横に並べるblock-oneの個数
     placeAllPlatforms() {
         const platforms = [
-            [1000, 460],  [2500, 300],  [3000, 460],  [3000, 140],  [5800, 300],
-            [6400, 460],  [8100, 460],  [8375, 300],  [9300, 550],  [9750, 420],
-            [10200, 510], [11200, 300], [11800, 460], [11800, 140], [15000, 460],
+            [1600, 330, 8],[2400,460,20],[4600,460,12],[5800,460,8],[6300,330,8],[7400,460,8],
+            [7900,460,4],[8110,460,4],[8500,330,8],[9000,140,6],[9600,460,6],[10240,460,8],
+            [11300,460,10],[12080,460,4],[12500,460,6]
         ];
-        platforms.forEach(([x, y]) => this.placePlatform(x, y));
+        platforms.forEach(([x, y, blockCount]) => this.placePlatform(x, y, blockCount));
     }
 
     // 壁を [左端X, 底辺Y, ブロック数] の一覧で指定する。ジャンプで越えられるのは5個まで
@@ -732,31 +771,34 @@ export class Chemical extends Phaser.Scene {
     // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
-            [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 250],
-            [3000, 590],  [3000, 410],  [3000, 90],  [4600, 350],  [5200, 350],
-            [5400, 350],  [6400, 230],  [7100, 590],  [7500, 590],  [8050, 330],
-            [8150, 330],  [8350, 90],  [8450, 90], [9300, 400], [9750, 90],
-            [10200, 400], [11200, 150], [11800, 90], [11800, 400], [135000, 590],
-            [140000, 590], [145000, 590], [150000, 590], [155000, 590], [160000, 590],
+            [450, this.groundY - 25],[705,this.groundY+100],[1205,300],[1600,50],
+            [2100,this.groundY - 25],[2100,430],[2600,this.groundY-25],[2600,430],[2800,this.groundY - 25],
+            [4000,this.groundY - 25],[4600,435],[7000,300],[7400,435],[8000,100],[8500,50],[8950,200],[9800,this.groundY -25],
+            [10800,250],[11300,100],[12080,435],[12500,50]
         ];
         positions.forEach(([x, y]) => {
             this.placeTangye(x, y);
         });
     }
 
-    // 上下に動くタン・イーを配置する
+    // 上下または左右に動くタン・イーを配置する
     placeAllMoveTangye() {
-        // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。省略時は 'vertical'、左右は 'horizontal'
         const moves = [
-            [1700, 350, 100],
+            [700, 300, 50 ],[955,300,50,'horizontal'],[3600,250,100,'horizontal'],[4600,this.groundY - 35, 200,'horizontal'],
+            [5800,200,50,'vertical'],[7600,200,350,'vertical'],[9800,this.groundY-35,450,'horizontal'],[12700,300,200,'vertical']
+
         ];
-        moves.forEach(([x, centerY, range], i) => {
-            const tangye = this.placeTangye(x, centerY - range);
+        moves.forEach(([centerX, centerY, range, axis = 'vertical'], i) => {
+            const tangye = this.placeTangye(
+                axis === 'horizontal' ? centerX - range : centerX,
+                axis === 'horizontal' ? centerY : centerY - range
+            );
             tangye.setData('moving', true);
             tangye.setScale(0.3);//動くタン・イーは少し大きくする
             this.tweens.add({
                 targets: tangye,
-                y: centerY + range,
+                ...(axis === 'horizontal' ? { x: centerX + range } : { y: centerY + range }),
                 duration: 1500,
                 ease: 'Sine.easeInOut',
                 yoyo: true,
@@ -777,7 +819,7 @@ export class Chemical extends Phaser.Scene {
     placeAllAkaten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [2400, 590, 80, 'horizontal'],
+            [1600, this.groundY - 25, 50, 'horizontal'],[6300,270,140,'horizontal'],[9600,350,80,'vertical']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const akaten = this.placeAkaten(
@@ -801,7 +843,7 @@ export class Chemical extends Phaser.Scene {
     placeAllAoten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [7600, 590, 100, 'horizontal'],
+            [955, this.groundY - 35, 145, 'horizontal'],[3700, this.groundY - 35, -100, 'horizontal'],[10800,this.groundY-35,100,'horizontal']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const aoten = this.placeAoten(
@@ -814,36 +856,47 @@ export class Chemical extends Phaser.Scene {
         });
     }
 
-    // レポートを1個配置する。中心のx座標・y座標と、中心から左右に動く幅を指定する
-    placeReport(centerX, y, range) {
-        const report = this.add.image(centerX - range, y, 'report1');
+    // レポートを1個配置する。移動方向は 'horizontal' または 'vertical'
+    placeReport(centerX, centerY, range, axis = 'horizontal') {
+        const report = this.add.image(
+            axis === 'vertical' ? centerX : centerX - range,
+            axis === 'vertical' ? centerY - range : centerY,
+            'report1'
+        );
         report.setScale(0.5);//レポートのサイズ（元画像108×88）
         report.setData('moving', true);
-        report.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
+        report.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         this.reportGroup.add(report);
         this.itemPreviousPositions.set(report, { x: report.x, y: report.y });
         return report;
     }
 
-    // レポートの一覧。[中心x, y, 中心から左右に動く幅]。1つずつ設定する
+    // レポートの一覧。[中心x, 中心y, 移動幅, 移動方向]。省略時は 'horizontal'、上下は 'vertical'
     placeAllReports() {
         const reports = [
-            [900, this.groundY - 25, 80],
+            [1600,290, 140, 'horizontal'],[1800, 100, 140, 'vertical'],[4600, 415, 200, 'horizontal'],
+            [9800,this.groundY-25,450,'horizontal'],[10240,420,140,'horizontal'],[10380,300,0]
         ];
-        reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
+        reports.forEach(([centerX, centerY, range, axis]) => this.placeReport(centerX, centerY, range, axis));
     }
 
     // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
     placeAllDepartmentDamage() {
         const items = [
-            [2500, this.groundY - 25, 120, '毒を吸い込んだ！'],
+            [3300, this.groundY - 25, 120, '劇物！いますぐ７０Ｌシャワーへ！'],
+            [5300, this.groundY - 25, 200, '劇物！いますぐ７０Ｌシャワーへ！'],
+            [5300, this.groundY - 25, -200, '劇物！いますぐ７０Ｌシャワーへ！'],
+            [5400, this.groundY - 25, 90, '劇物！いますぐ７０Ｌシャワーへ！'],
+            [5200, this.groundY - 25, -110, '劇物！いますぐ７０Ｌシャワーへ！'],
+            [12500, this.groundY - 25, 300, '劇物！いますぐ７０Ｌシャワーへ！'],
         ];
         items.forEach(([centerX, y, range, damageMessage]) => {
-            const item = this.add.image(centerX - range, y, 'ChemicalDamageItem');
-            const image = this.textures.get('ChemicalDamageItem').getSourceImage();
+            const item = this.add.image(centerX - range, y, 'DenshiDamageItem');
+            const image = this.textures.get('DenshiDamageItem').getSourceImage();
             item.setScale(Math.min(70 / image.width, 55 / image.height));
             item.setData('moving', true);
             item.setData('damageMessage', damageMessage);
+            item.setData('damageEffectTexture', 'DenshiDamageExplosion');
             item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
             this.departmentDamageGroup.add(item);
             this.itemPreviousPositions.set(item, { x: item.x, y: item.y });
@@ -868,7 +921,7 @@ export class Chemical extends Phaser.Scene {
     // エナドリの一覧。[x, y]。yを省略すると地面の上に置く
     placeAllEnadori() {
         const enadori = [
-            [3400],
+            [3000]
         ];
         enadori.forEach(([x, y]) => this.placeEnadori(x, y ?? this.groundY - 20));
     }
@@ -1014,12 +1067,12 @@ export class Chemical extends Phaser.Scene {
             this.mustReleaseMovementKeys = true;
             this.characterStand.anims.stop();
             this.characterStandVelocityY = -800;
-            this.characterStand.setTexture('ChemicalcharacterDamage');
+            this.characterStand.setTexture('DenshicharacterDamage');
             this.damageTextureTimer = this.time.delayedCall(600, () => {
                 this.isDamageShowing = false;
                 this.damageTextureTimer = null;
                 if (!this.isGameOver) {
-                    this.characterStand.setTexture('ChemicalcharacterStand');
+                    this.characterStand.setTexture('DenshicharacterStand');
                 }
             });
 
@@ -1093,7 +1146,7 @@ export class Chemical extends Phaser.Scene {
             this.characterStandVelocityY = 0;
             showGameOverImage();
         } else {
-            this.characterStand.setTexture('ChemicalcharacterDamage').setVisible(true);
+            this.characterStand.setTexture('DenshicharacterDamage').setVisible(true);
             this.characterStandVelocityY = -800;
             this.time.delayedCall(1000, () => {
                 showGameOverImage();
