@@ -34,6 +34,12 @@ export class Denshi extends Phaser.Scene {
         this.isGameOver = false;
         this.isDamageShowing = false;
         this.isInvulnerable = false;
+        this.isStarInvincible = false;//踏みつけ回数による無敵モード中かどうか
+        this.stompCount = 0;//上から踏みつけて無害にした回数
+        this.stompsForInvincible = 10;//無敵モードになる踏みつけ回数
+        this.starInvincibleDuration = 10000;//無敵モードの時間（ミリ秒）
+        this.starInvincibleTimer = null;
+        this.starGlow = null;
         this.isPitRespawnProtected = false;
         this.pitRespawnProtectionTimer = null;
         this.mustReleaseMovementKeys = false;
@@ -44,7 +50,7 @@ export class Denshi extends Phaser.Scene {
         this.groundY = this.scale.height - this.groundHeight;
         this.worldWidth = 12800;//ワールドの幅（地面の生成より前に必要）
         this.pits = [];//落とし穴の範囲 {left, right}
-        this.maxLife = 3;//ライフの最大数
+        this.maxLife = 5;//ライフの最大数
         this.life = this.maxLife;//ライフ
         this.placeAllPits();//落とし穴を配置し、穴を避けて地面を作る
 
@@ -129,6 +135,24 @@ export class Denshi extends Phaser.Scene {
             padding: { top: 8, bottom: 8 }
         }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
 
+        // 上から踏みつけて無害にしたダメージアイテムの数（右上、ライフの下に固定）
+        this.stompCountText = this.add.text(this.scale.width - 20, 120, '', {
+            fontSize: '28px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4
+        }).setOrigin(1, 0).setScrollFactor(0).setDepth(100);
+        this.updateStompCountDisplay();
+
+        // 無敵モード中だけ画面中央上部に表示する
+        this.starInvincibleText = this.add.text(this.scale.width / 2, 40, '無敵状態', {
+            fontSize: '40px',
+            color: '#ffff00',
+            stroke: '#000000',
+            strokeThickness: 6,
+            padding: { top: 8, bottom: 8 }
+        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
+
         // プレイヤー
         this.characterStand = this.add.sprite(220, 0, 'DenshicharacterStand');//J（主人公）を配置
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
@@ -148,6 +172,8 @@ export class Denshi extends Phaser.Scene {
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);//スペースキーの挙動を監視
         this.characterStandVelocityY = 0;//J（主人公）のY軸速度
         this.isGrounded = true;//J（主人公）が地面にいるかどうか
+        this.coyoteTime = 0.3;//地面から離れた後もジャンプできる猶予（秒）
+        this.coyoteTimeRemaining = this.coyoteTime;
 
         // カメラ
         const cam = this.cameras.main;
@@ -178,17 +204,26 @@ export class Denshi extends Phaser.Scene {
         const previousCharacterX = this.previousCharacterX;
         this.elapsedSeconds += deltaSeconds;
         this.timeText.setText(`Time: ${this.elapsedSeconds.toFixed(1)}`);
+        this.updateStarInvincibleText();
         this.run(deltaSeconds);
         this.resolveWallCollisions(previousCharacterX);
         if (this.characterStand.x > this.worldWidth) {
             this.leaveStage();
         }
 
-        // ジャンプ入力
+        // ジャンプ入力（地面・空中ブロック・隠しブロックから離れた後も一定時間はジャンプできる）
+        if (this.isGrounded) {
+            this.coyoteTimeRemaining = this.coyoteTime;
+        } else if (this.characterStandVelocityY < 0) {
+            this.coyoteTimeRemaining = 0;//ジャンプ・踏みつけ・ダメージで上昇中は猶予なし
+        } else {
+            this.coyoteTimeRemaining = Math.max(this.coyoteTimeRemaining - deltaSeconds, 0);
+        }
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-            if (this.isGrounded) {//スペースキーが押され、かつ地面にいる場合
+            if (this.coyoteTimeRemaining > 0) {//スペースキーが押され、かつ地面にいるか離れてから猶予時間内の場合
                 this.characterStandVelocityY = -this.jumpSpeed;//ジャンプ速度を設定
                 this.isGrounded = false;//地面から離れたことを示す
+                this.coyoteTimeRemaining = 0;
             }
         }
         this.isGrounded = false;
@@ -278,13 +313,14 @@ export class Denshi extends Phaser.Scene {
                     this.tweens.killTweensOf(akaten);
                     this.AkatenGroup.remove(akaten, false, false);
                     this.tangyeGroup.add(akaten);
+                    this.registerStomp();
                     this.characterStandVelocityY = -this.jumpSpeed;
-                    if(this.life < 3) {
+                    if(this.life < this.maxLife) {
                         this.life = Math.min(this.life + 1, this.maxLife);
                         this.updateLifeDisplay();
                     }
                 }else if (akaten.getData('moving')) {//動くアカテンに当たった
-                    if (!this.isInvulnerable) {
+                    if (!this.isDamageImmune()) {
                         this.showDamageCause('akaten', akaten);
                         this.getDamage(0);
                     }
@@ -302,14 +338,17 @@ export class Denshi extends Phaser.Scene {
                     this.tweens.killTweensOf(aoten);
                     this.AotenGroup.remove(aoten, false, false);
                     this.tangyeGroup.add(aoten);
+                    this.registerStomp();
                     this.characterStandVelocityY = -this.jumpSpeed;
-                    if(this.life < 3) {
+                    if(this.life < this.maxLife) {
                         this.life = Math.min(this.life + 1, this.maxLife);
                         this.updateLifeDisplay();
                     }
                 }else if (aoten.getData('moving')) {//動くアオテンに当たった
-                    this.showDamageCause('aoten', aoten);
-                    this.getAoten();
+                    if (!this.isStarInvincible) {
+                        this.showDamageCause('aoten', aoten);
+                        this.getAoten();
+                    }
                 }
             }
         });
@@ -336,11 +375,12 @@ export class Denshi extends Phaser.Scene {
         }
         if (this.isHitFromAbove(target, true)) {
             target.destroy();
+            this.registerStomp();
             this.characterStandVelocityY = -this.jumpSpeed;
         } else {
             const effectTexture = target.getData('damageEffectTexture');
             if (effectTexture) {
-                if (!this.isInvulnerable) {
+                if (!this.isDamageImmune()) {
                     this.showDamageCause(kind, target);
                     this.getDamage(0);
                 }
@@ -357,7 +397,7 @@ export class Denshi extends Phaser.Scene {
                     duration: 500,
                     onComplete: () => target.destroy(),
                 });
-            } else if (!this.isInvulnerable) {
+            } else if (!this.isDamageImmune()) {
                 this.showDamageCause(kind, target);
                 this.getDamage(0);
                 target.destroy();
@@ -433,7 +473,7 @@ export class Denshi extends Phaser.Scene {
         const viewH = this.scale.height;
         const maxScrollX = this.worldWidth - viewW;
         const savedScrollX = cam.scrollX;
-        const hudTexts = [this.tangyeCountText, this.tangyeCountIcon, ...this.lifeIcons, this.leftXText, this.timeText, this.damageCauseText];
+        const hudTexts = [this.tangyeCountText, this.tangyeCountIcon, ...this.lifeIcons, this.leftXText, this.timeText, this.damageCauseText, this.stompCountText, this.starInvincibleText];
 
         cam.stopFollow();
         const hudVisibility = hudTexts.map(text => text.visible);
@@ -990,8 +1030,71 @@ export class Denshi extends Phaser.Scene {
         });
     }
 
+    // 上から踏みつけて無害にした回数を数え、一定回数ごとに無敵モードにする（ダメージを受けても減らない）
+    registerStomp() {
+        this.stompCount += 1;
+        this.updateStompCountDisplay();
+        if (this.stompCount % this.stompsForInvincible === 0) {
+            this.startStarInvincible();
+        }
+    }
+
+    updateStompCountDisplay() {
+        const remaining = this.stompsForInvincible - (this.stompCount % this.stompsForInvincible);
+        this.stompCountText.setText(`無敵状態までのこり${remaining}個`);
+    }
+
+    // 無敵モードの残り秒数を画面中央上部に表示する
+    updateStarInvincibleText() {
+        if (!this.isStarInvincible || !this.starInvincibleTimer) {
+            return;
+        }
+        const seconds = Math.ceil(this.starInvincibleTimer.getRemainingSeconds())
+            .toLocaleString('ja-JP-u-nu-fullwide', { useGrouping: false });
+        this.starInvincibleText.setText(`無敵状態 のこり${seconds}秒`);
+    }
+
+    startStarInvincible() {
+        this.isStarInvincible = true;
+        this.damageCauseTimer?.remove(false);
+        this.damageCauseText.setVisible(false);
+        this.starInvincibleText.setVisible(true);
+        this.stompCountText.setVisible(false);
+        this.starInvincibleTimer?.remove(false);
+        // 無敵モード中はキャラクターの周りを黄色で縁取りする（WebGLのときのみ）
+        if (!this.starGlow && this.characterStand.preFX) {
+            this.characterStand.preFX.padding = 8;
+            this.starGlow = this.characterStand.preFX.addGlow(0xffff00, 6, 0, false, 0.1, 8);
+            // 縁取りの強さをなめらかに増減させ、ふわっと点滅させる
+            this.tweens.add({
+                targets: this.starGlow,
+                outerStrength: { from: 6, to: 0.5 },
+                duration: 400,
+                ease: 'Sine.easeInOut',
+                yoyo: true,
+                repeat: -1
+            });
+        }
+        this.starInvincibleTimer = this.time.delayedCall(this.starInvincibleDuration, () => {
+            this.isStarInvincible = false;
+            this.starInvincibleTimer = null;
+            this.starInvincibleText.setVisible(false);
+            this.stompCountText.setVisible(true);
+            if (this.starGlow) {
+                this.tweens.killTweensOf(this.starGlow);
+                this.characterStand.preFX.remove(this.starGlow);
+                this.starGlow = null;
+            }
+        });
+        this.updateStarInvincibleText();
+    }
+
+    isDamageImmune() {
+        return this.isInvulnerable || this.isStarInvincible;
+    }
+
     getDamage(from){
-        if (from === 0 && this.isInvulnerable) {
+        if (from === 0 && this.isDamageImmune()) {
             return;
         }
 

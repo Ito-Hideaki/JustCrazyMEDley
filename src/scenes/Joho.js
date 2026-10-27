@@ -9,12 +9,12 @@ export class Joho extends Phaser.Scene {
     preload() {
         this.load.image('background', 'assets/back1.png');//背景
         this.load.image('ground1', 'assets/ground1.png');//地面
-        this.load.image('DenshicharacterStand', 'assets/J-stand.png');//J（主人公）
-        this.load.image('DenshicharacterDamage', 'assets/J-damage.png');//J（主人公）
-        this.load.image('DenshicharacterRun1', 'assets/J-run-1.png');//J（主人公）
-        this.load.image('DenshicharacterRun2', 'assets/J-run-2.png');//J（主人公）
-        this.load.image('DenshicharacterRun3', 'assets/J-run-3.png');//J（主人公）
-        this.load.image('DenshicharacterRun4', 'assets/J-run-4.png');//J（主人公）
+        this.load.image('JohocharacterStand', 'assets/J-stand.png');//J（主人公）
+        this.load.image('JohocharacterDamage', 'assets/J-damage.png');//J（主人公）
+        this.load.image('JohocharacterRun1', 'assets/J-run-1.png');//J（主人公）
+        this.load.image('JohocharacterRun2', 'assets/J-run-2.png');//J（主人公）
+        this.load.image('JohocharacterRun3', 'assets/J-run-3.png');//J（主人公）
+        this.load.image('JohocharacterRun4', 'assets/J-run-4.png');//J（主人公）
         this.load.image('tangye', 'assets/tangye.png');//タン・イー
         this.load.image('Akaten', 'assets/Akaten.png');//赤点
         this.load.image('Aoten', 'assets/Aoten.png');//青点
@@ -32,6 +32,12 @@ export class Joho extends Phaser.Scene {
         this.isGameOver = false;
         this.isDamageShowing = false;
         this.isInvulnerable = false;
+        this.isStarInvincible = false;//踏みつけ回数による無敵モード中かどうか
+        this.stompCount = 0;//上から踏みつけて無害にした回数
+        this.stompsForInvincible = 10;//無敵モードになる踏みつけ回数
+        this.starInvincibleDuration = 10000;//無敵モードの時間（ミリ秒）
+        this.starInvincibleTimer = null;
+        this.starGlow = null;
         this.isPitRespawnProtected = false;
         this.pitRespawnProtectionTimer = null;
         this.mustReleaseMovementKeys = false;
@@ -42,7 +48,7 @@ export class Joho extends Phaser.Scene {
         this.groundY = this.scale.height - this.groundHeight;
         this.worldWidth = 12800;//ワールドの幅（地面の生成より前に必要）
         this.pits = [];//落とし穴の範囲 {left, right}
-        this.maxLife = 3;//ライフの最大数
+        this.maxLife = 5;//ライフの最大数
         this.life = this.maxLife;//ライフ
         this.placeAllPits();//落とし穴を配置し、穴を避けて地面を作る
 
@@ -129,18 +135,36 @@ export class Joho extends Phaser.Scene {
             padding: { top: 8, bottom: 8 }
         }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
 
+        // 上から踏みつけて無害にしたダメージアイテムの数（右上、ライフの下に固定）
+        this.stompCountText = this.add.text(this.scale.width - 20, 120, '', {
+            fontSize: '28px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4
+        }).setOrigin(1, 0).setScrollFactor(0).setDepth(100);
+        this.updateStompCountDisplay();
+
+        // 無敵モード中だけ画面中央上部に表示する
+        this.starInvincibleText = this.add.text(this.scale.width / 2, 40, '無敵状態', {
+            fontSize: '40px',
+            color: '#ffff00',
+            stroke: '#000000',
+            strokeThickness: 6,
+            padding: { top: 8, bottom: 8 }
+        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
+
         // プレイヤー
-        this.characterStand = this.add.sprite(220, 0, 'DenshicharacterStand');//J（主人公）を配置
+        this.characterStand = this.add.sprite(220, 0, 'JohocharacterStand');//J（主人公）を配置
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
         this.playerHalfHeight = this.characterStand.displayHeight / 2;//判定用の高さ（画像が切り替わっても変えない）
         this.characterStandBaseY = this.groundY - this.playerHalfHeight;
         this.characterStand.y = this.characterStandBaseY;
         this.previousCharacterX = this.characterStand.x;
         this.previousCharacterY = this.characterStand.y;
-        if (!this.anims.exists('DenshiRun')) {
+        if (!this.anims.exists('JohoRun')) {
             this.anims.create({
-                key: 'DenshiRun',
-                frames: ['DenshicharacterRun1', 'DenshicharacterRun2', 'DenshicharacterRun3', 'DenshicharacterRun4'].map(key => ({ key })),
+                key: 'JohoRun',
+                frames: ['JohocharacterRun1', 'JohocharacterRun2', 'JohocharacterRun3', 'JohocharacterRun4'].map(key => ({ key })),
                 frameRate: 10,
                 repeat: -1
             });
@@ -148,6 +172,10 @@ export class Joho extends Phaser.Scene {
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);//スペースキーの挙動を監視
         this.characterStandVelocityY = 0;//J（主人公）のY軸速度
         this.isGrounded = true;//J（主人公）が地面にいるかどうか
+        this.coyoteTime = 0.3;//地面から離れた後もジャンプできる猶予（秒）
+        this.hiddenBlockHintRange = 300;//隠しブロックが半透明で見え始める距離（px）
+        this.hiddenBlockHintAlpha = 0.5;//見え始めた隠しブロックの透明度
+        this.coyoteTimeRemaining = this.coyoteTime;
 
         // カメラ
         const cam = this.cameras.main;
@@ -178,17 +206,26 @@ export class Joho extends Phaser.Scene {
         const previousCharacterX = this.previousCharacterX;
         this.elapsedSeconds += deltaSeconds;
         this.timeText.setText(`Time: ${this.elapsedSeconds.toFixed(1)}`);
+        this.updateStarInvincibleText();
         this.run(deltaSeconds);
         this.resolveWallCollisions(previousCharacterX);
         if (this.characterStand.x > this.worldWidth) {
             this.leaveStage();
         }
 
-        // ジャンプ入力
+        // ジャンプ入力（地面・空中ブロック・隠しブロックから離れた後も一定時間はジャンプできる）
+        if (this.isGrounded) {
+            this.coyoteTimeRemaining = this.coyoteTime;
+        } else if (this.characterStandVelocityY < 0) {
+            this.coyoteTimeRemaining = 0;//ジャンプ・踏みつけ・ダメージで上昇中は猶予なし
+        } else {
+            this.coyoteTimeRemaining = Math.max(this.coyoteTimeRemaining - deltaSeconds, 0);
+        }
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-            if (this.isGrounded) {//スペースキーが押され、かつ地面にいる場合
+            if (this.coyoteTimeRemaining > 0) {//スペースキーが押され、かつ地面にいるか離れてから猶予時間内の場合
                 this.characterStandVelocityY = -this.jumpSpeed;//ジャンプ速度を設定
                 this.isGrounded = false;//地面から離れたことを示す
+                this.coyoteTimeRemaining = 0;
             }
         }
         this.isGrounded = false;
@@ -212,6 +249,7 @@ export class Joho extends Phaser.Scene {
 
             const isCollidingWithHead =
                 this.characterStandVelocityY < 0 &&
+                (!platform.getData('hiddenBlock') || !platform.getData('revealed')) &&
                 headTopY >= platformBounds.bottom &&
                 this.characterStand.y - this.playerHalfHeight <= platformBounds.bottom &&
                 overlapsX;
@@ -220,7 +258,10 @@ export class Joho extends Phaser.Scene {
                 this.characterStand.y = platformBounds.bottom + this.playerHalfHeight;
                 this.characterStandVelocityY = 0;
                 if (platform.getData('hiddenBlock') && !platform.getData('revealed')) {
-                    platform.getData('hiddenGroup').forEach(block => block.setVisible(true).setData('revealed', true));
+                    platform.getData('hiddenGroup').forEach(block => {
+                        this.tweens.killTweensOf(block);
+                        block.setVisible(true).setAlpha(1).setData('revealed', true);
+                    });
                     const tangye = this.placeTangye(
                         platformBounds.centerX,
                         platformBounds.top
@@ -245,6 +286,7 @@ export class Joho extends Phaser.Scene {
             this.isGrounded = true;//地面にいることを示す
         }
 
+        this.updateHiddenBlockVisibility();
         this.updateMovers(deltaSeconds);
         this.updateEnadori(deltaSeconds);
         this.resolveItemCollisions();
@@ -290,13 +332,14 @@ export class Joho extends Phaser.Scene {
                     this.tweens.killTweensOf(akaten);
                     this.AkatenGroup.remove(akaten, false, false);
                     this.tangyeGroup.add(akaten);
+                    this.registerStomp();
                     this.characterStandVelocityY = -this.jumpSpeed;
-                    if(this.life < 3) {
+                    if(this.life < this.maxLife) {
                         this.life = Math.min(this.life + 1, this.maxLife);
                         this.updateLifeDisplay();
                     }
                 }else if (akaten.getData('moving')) {//動くアカテンに当たった
-                    if (!this.isInvulnerable) {
+                    if (!this.isDamageImmune()) {
                         this.showDamageCause('akaten', akaten);
                         this.getDamage(0);
                     }
@@ -314,14 +357,17 @@ export class Joho extends Phaser.Scene {
                     this.tweens.killTweensOf(aoten);
                     this.AotenGroup.remove(aoten, false, false);
                     this.tangyeGroup.add(aoten);
+                    this.registerStomp();
                     this.characterStandVelocityY = -this.jumpSpeed;
-                    if(this.life < 3) {
+                    if(this.life < this.maxLife) {
                         this.life = Math.min(this.life + 1, this.maxLife);
                         this.updateLifeDisplay();
                     }
                 }else if (aoten.getData('moving')) {//動くアオテンに当たった
-                    this.showDamageCause('aoten', aoten);
-                    this.getAoten();
+                    if (!this.isStarInvincible) {
+                        this.showDamageCause('aoten', aoten);
+                        this.getAoten();
+                    }
                 }
             }
         });
@@ -345,8 +391,9 @@ export class Joho extends Phaser.Scene {
         }
         if (this.isHitFromAbove(target, true)) {
             target.destroy();
+            this.registerStomp();
             this.characterStandVelocityY = -this.jumpSpeed * 1.2;
-        } else if (!this.isInvulnerable) {
+        } else if (!this.isDamageImmune()) {
             this.showDamageCause(kind, target);
             this.getDamage(0);
             target.destroy();
@@ -395,11 +442,11 @@ export class Joho extends Phaser.Scene {
             this.characterStand.x += direction * this.moveSpeed * deltaSeconds;
             this.characterStand.setFlipX(direction < 0);
             if (!this.isDamageShowing && !this.characterStand.anims.isPlaying) {
-                this.characterStand.play('DenshiRun');
+                this.characterStand.play('JohoRun');
             }
         } else if (!this.isDamageShowing) {
             this.characterStand.anims.stop();
-            this.characterStand.setTexture('DenshicharacterStand');
+            this.characterStand.setTexture('JohocharacterStand');
         }
 
         this.characterStand.x = Phaser.Math.Clamp(
@@ -421,7 +468,7 @@ export class Joho extends Phaser.Scene {
         const viewH = this.scale.height;
         const maxScrollX = this.worldWidth - viewW;
         const savedScrollX = cam.scrollX;
-        const hudTexts = [this.tangyeCountText, this.tangyeCountIcon, ...this.lifeIcons, this.leftXText, this.timeText, this.damageCauseText];
+        const hudTexts = [this.tangyeCountText, this.tangyeCountIcon, ...this.lifeIcons, this.leftXText, this.timeText, this.damageCauseText, this.stompCountText, this.starInvincibleText];
 
         cam.stopFollow();
         const hudVisibility = hudTexts.map(text => text.visible);
@@ -570,10 +617,28 @@ export class Joho extends Phaser.Scene {
         return blocks;
     }
 
+    // 隠しブロック：一度中心から一定距離以内に近づいたら、離れても半透明表示を維持する
+    updateHiddenBlockVisibility() {
+        this.platformGroup.getChildren().forEach(block => {
+            if (!block.getData('hiddenBlock') || block.getData('revealed')) {
+                return;
+            }
+            const distance = Phaser.Math.Distance.Between(this.characterStand.x, this.characterStand.y, block.x, block.y);
+            if (distance <= this.hiddenBlockHintRange && !block.visible) {
+                block.setVisible(true).setAlpha(0);
+                this.tweens.add({
+                    targets: block,
+                    alpha: this.hiddenBlockHintAlpha,
+                    duration: 500
+                });
+            }
+        });
+    }
+
     placeAllHiddenBlocks() {
         // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
-            [450, this.groundY - 350, 3],[2800,50,5],[3302.5, 397.5, 3],
+            [450, this.groundY - 330, 3],[2800,50,5],[3302.5, 397.5, 3],
         ];
         hiddenBlocks.forEach(([x, y, blockCount]) =>
             this.placeHiddenBlock(x, y, blockCount));
@@ -1046,8 +1111,71 @@ export class Joho extends Phaser.Scene {
         });
     }
 
+    // 上から踏みつけて無害にした回数を数え、一定回数ごとに無敵モードにする（ダメージを受けても減らない）
+    registerStomp() {
+        this.stompCount += 1;
+        this.updateStompCountDisplay();
+        if (this.stompCount % this.stompsForInvincible === 0) {
+            this.startStarInvincible();
+        }
+    }
+
+    updateStompCountDisplay() {
+        const remaining = this.stompsForInvincible - (this.stompCount % this.stompsForInvincible);
+        this.stompCountText.setText(`無敵状態までのこり${remaining}個`);
+    }
+
+    // 無敵モードの残り秒数を画面中央上部に表示する
+    updateStarInvincibleText() {
+        if (!this.isStarInvincible || !this.starInvincibleTimer) {
+            return;
+        }
+        const seconds = Math.ceil(this.starInvincibleTimer.getRemainingSeconds())
+            .toLocaleString('ja-JP-u-nu-fullwide', { useGrouping: false });
+        this.starInvincibleText.setText(`無敵状態 のこり${seconds}秒`);
+    }
+
+    startStarInvincible() {
+        this.isStarInvincible = true;
+        this.damageCauseTimer?.remove(false);
+        this.damageCauseText.setVisible(false);
+        this.starInvincibleText.setVisible(true);
+        this.stompCountText.setVisible(false);
+        this.starInvincibleTimer?.remove(false);
+        // 無敵モード中はキャラクターの周りを黄色で縁取りする（WebGLのときのみ）
+        if (!this.starGlow && this.characterStand.preFX) {
+            this.characterStand.preFX.padding = 8;
+            this.starGlow = this.characterStand.preFX.addGlow(0xffff00, 6, 0, false, 0.1, 8);
+            // 縁取りの強さをなめらかに増減させ、ふわっと点滅させる
+            this.tweens.add({
+                targets: this.starGlow,
+                outerStrength: { from: 6, to: 0.5 },
+                duration: 400,
+                ease: 'Sine.easeInOut',
+                yoyo: true,
+                repeat: -1
+            });
+        }
+        this.starInvincibleTimer = this.time.delayedCall(this.starInvincibleDuration, () => {
+            this.isStarInvincible = false;
+            this.starInvincibleTimer = null;
+            this.starInvincibleText.setVisible(false);
+            this.stompCountText.setVisible(true);
+            if (this.starGlow) {
+                this.tweens.killTweensOf(this.starGlow);
+                this.characterStand.preFX.remove(this.starGlow);
+                this.starGlow = null;
+            }
+        });
+        this.updateStarInvincibleText();
+    }
+
+    isDamageImmune() {
+        return this.isInvulnerable || this.isStarInvincible;
+    }
+
     getDamage(from){
-        if (from === 0 && this.isInvulnerable) {
+        if (from === 0 && this.isDamageImmune()) {
             return;
         }
 
@@ -1059,12 +1187,12 @@ export class Joho extends Phaser.Scene {
             this.mustReleaseMovementKeys = true;
             this.characterStand.anims.stop();
             this.characterStandVelocityY = -800;
-            this.characterStand.setTexture('DenshicharacterDamage');
+            this.characterStand.setTexture('JohocharacterDamage');
             this.damageTextureTimer = this.time.delayedCall(600, () => {
                 this.isDamageShowing = false;
                 this.damageTextureTimer = null;
                 if (!this.isGameOver) {
-                    this.characterStand.setTexture('DenshicharacterStand');
+                    this.characterStand.setTexture('JohocharacterStand');
                 }
             });
 
@@ -1138,7 +1266,7 @@ export class Joho extends Phaser.Scene {
             this.characterStandVelocityY = 0;
             showGameOverImage();
         } else {
-            this.characterStand.setTexture('DenshicharacterDamage').setVisible(true);
+            this.characterStand.setTexture('JohocharacterDamage').setVisible(true);
             this.characterStandVelocityY = -800;
             this.time.delayedCall(1000, () => {
                 showGameOverImage();
