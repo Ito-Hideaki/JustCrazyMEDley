@@ -7,6 +7,8 @@ import { Electrical } from './scenes/Electrical.js';
 import { Denshi } from './scenes/Denshi.js';
 import { Joho } from './scenes/Joho.js';
 import { Chemical } from './scenes/Chemical.js';
+import { Blank } from './scenes/Blank.js';
+import { Final } from './scenes/Final.js';
 
 // 日本語フォントは文字の上端が描画領域からはみ出して見切れるので、全テキストに上下の余白を付ける
 const addText = Phaser.GameObjects.GameObjectFactory.prototype.text;
@@ -19,7 +21,7 @@ Phaser.GameObjects.GameObjectFactory.prototype.text = function (x, y, text, styl
 };
 
 // 開発用：URLに ?scene=Joho のように付けると、そのシーンから開始する（再読み込みしてもTitleに戻らない）
-const scenes = [Title, Spell, Home, Mechanical, Electrical, Denshi, Joho, Chemical, Ending];
+const scenes = [Title, Spell, Home, Mechanical, Electrical, Denshi, Joho, Chemical, Final, Ending, Blank];
 const startKey = new URLSearchParams(location.search).get('scene');
 const startIndex = scenes.findIndex(scene => scene.name === startKey);
 if (startIndex > 0) {
@@ -43,4 +45,3 @@ const config = {
 }
 
 new Phaser.Game(config);
-            
