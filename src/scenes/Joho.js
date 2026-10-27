@@ -79,6 +79,12 @@ export class Joho extends Phaser.Scene {
         this.enadoriGroup = this.add.group();//配置したエナドリ（判定用の箱）の管理用
         this.departmentDamageGroup = this.add.group();//学科専用damageアイテムの管理用
         this.placeAllHiddenBlocks();
+        this.solidBlockBounds = [
+            ...this.platformGroup.getChildren(),
+            ...this.wallGroup.getChildren(),
+        ].map(block => ({ block, bounds: block.getBounds() }));
+        this.wallBlockBounds = this.wallGroup.getChildren()
+            .map(block => block.getBounds());
         this.tangyeCount = 0;//今回のプレイで取得したタン・イーの数
         this.placeAllTangye();//未取得のタン・イーを配置
         this.placeAllMoveTangye();//未取得の動くタン・イーを配置
@@ -238,9 +244,7 @@ export class Joho extends Phaser.Scene {
         this.characterStand.y += this.characterStandVelocityY * deltaSeconds;//Y軸の位置を更新
 
         const characterBounds = this.characterStand.getBounds();//キャラクターのバウンディングボックスを取得
-        const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
-        for (const platform of solidBlocks) {
-            const platformBounds = platform.getBounds();//空中ブロックのバウンディングボックスを取得
+        for (const { block: platform, bounds: platformBounds } of this.solidBlockBounds) {
             const overlapsX =
                 characterBounds.right > platformBounds.left &&
                 characterBounds.left < platformBounds.right;
@@ -651,8 +655,7 @@ export class Joho extends Phaser.Scene {
         }
 
         const playerBounds = this.characterStand.getBounds();
-        for (const block of this.wallGroup.getChildren()) {
-            const blockBounds = block.getBounds();
+        for (const blockBounds of this.wallBlockBounds) {
             const overlapsY = playerBounds.bottom > blockBounds.top && playerBounds.top < blockBounds.bottom;
             if (!overlapsY) {
                 continue;
@@ -673,7 +676,6 @@ export class Joho extends Phaser.Scene {
 
     // 赤点・青点・レポートを動かす。ブロックに当たると進む向きを反転する
     updateMovers(deltaSeconds) {
-        const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
         const movers = [
             ...this.AkatenGroup.getChildren(),
             ...this.AotenGroup.getChildren(),
@@ -695,8 +697,7 @@ export class Joho extends Phaser.Scene {
             const nextY = swing.axis === 'vertical' ? swing.centerY - offset : swing.centerY;
             const halfWidth = bounds.width / 2;
             const halfHeight = bounds.height / 2;
-            const hitsBlock = solidBlocks.some(block => {
-                const blockBounds = block.getBounds();
+            const hitsBlock = this.solidBlockBounds.some(({ bounds: blockBounds }) => {
                 return nextX + halfWidth > blockBounds.left &&
                     nextX - halfWidth < blockBounds.right &&
                     nextY + halfHeight > blockBounds.top &&
@@ -714,7 +715,6 @@ export class Joho extends Phaser.Scene {
     }
 
     resolveItemCollisions() {
-        const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
         const items = [
             ...this.tangyeGroup.getChildren(),
             ...this.AkatenGroup.getChildren(),
@@ -725,13 +725,11 @@ export class Joho extends Phaser.Scene {
 
         items.forEach(item => {
             const previous = this.itemPreviousPositions.get(item) ?? { x: item.x, y: item.y };
-            const itemBounds = item.getBounds();
-            const halfWidth = itemBounds.width / 2;
-            const halfHeight = itemBounds.height / 2;
+            let currentBounds = item.getBounds();
+            const halfWidth = currentBounds.width / 2;
+            const halfHeight = currentBounds.height / 2;
 
-            for (const block of solidBlocks) {
-                const currentBounds = item.getBounds();
-                const blockBounds = block.getBounds();
+            for (const { bounds: blockBounds } of this.solidBlockBounds) {
                 const overlapsX = currentBounds.right > blockBounds.left && currentBounds.left < blockBounds.right;
                 const overlapsY = currentBounds.bottom > blockBounds.top && currentBounds.top < blockBounds.bottom;
                 if (!overlapsX || !overlapsY) {
@@ -777,6 +775,7 @@ export class Joho extends Phaser.Scene {
                     }
                 }
 
+                currentBounds = item.getBounds();
                 this.tweens.killTweensOf(item);
             }
 
@@ -1008,8 +1007,6 @@ export class Joho extends Phaser.Scene {
     updateEnadori(deltaSeconds) {
         const rollSpeed = 200;//横移動の速さ(px/秒)
         const hopSpeed = 800;//跳ね上がる初速
-        const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
-
         this.enadoriGroup.getChildren().slice().forEach(body => {
             const sprite = body.getData('sprite');
             const halfWidth = body.displayWidth / 2;
@@ -1020,8 +1017,7 @@ export class Joho extends Phaser.Scene {
 
             // 横移動（壁に当たったら向きを反転）
             const nextX = body.x + direction * rollSpeed * deltaSeconds;
-            const hitsWall = solidBlocks.some(block => {
-                const blockBounds = block.getBounds();
+            const hitsWall = this.solidBlockBounds.some(({ bounds: blockBounds }) => {
                 return body.y + halfHeight > blockBounds.top && body.y - halfHeight < blockBounds.bottom &&
                     nextX + halfWidth > blockBounds.left && nextX - halfWidth < blockBounds.right;
             });
@@ -1057,8 +1053,7 @@ export class Joho extends Phaser.Scene {
             if (!isOverPit && velocityY >= 0 && previousBottom <= this.groundY && currentBottom >= this.groundY) {
                 landOn(this.groundY);
             }
-            for (const block of solidBlocks) {
-                const blockBounds = block.getBounds();
+            for (const { bounds: blockBounds } of this.solidBlockBounds) {
                 if (velocityY >= 0 && previousBottom <= blockBounds.top && body.y + halfHeight >= blockBounds.top &&
                     body.x + halfWidth > blockBounds.left && body.x - halfWidth < blockBounds.right) {
                     landOn(blockBounds.top);
@@ -1244,7 +1239,7 @@ export class Joho extends Phaser.Scene {
                 .setScrollFactor(0)
                 .setDepth(1000)
                 .setAlpha(0);
-            const fit = Math.min(width / img.width, height / img.height, 1);
+            const fit = Math.max(width / img.width, height / img.height);
             img.setScale(fit);
             this.tweens.add({
                 targets: img,

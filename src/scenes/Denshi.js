@@ -292,6 +292,8 @@ export class Denshi extends Phaser.Scene {
             if (isTouching) {//J（主人公）とタン・イーが衝突した場合
                 if (tangye.getData('moving')) {//動くタン・イーに当たった
                     this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
+                } else if (this.isHitFromAbove(tangye)) {
+                    this.characterStandVelocityY = -this.jumpSpeed;//落下中に上から踏んだら跳ね上がる
                 }
                 this.runTangyeCount += 1;
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
@@ -1163,7 +1165,7 @@ export class Denshi extends Phaser.Scene {
                 .setScrollFactor(0)
                 .setDepth(1000)
                 .setAlpha(0);
-            const fit = Math.min(width / img.width, height / img.height, 1);
+            const fit = Math.max(width / img.width, height / img.height);
             img.setScale(fit);
             this.tweens.add({
                 targets: img,

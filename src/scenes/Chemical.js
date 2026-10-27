@@ -1262,7 +1262,7 @@ export class Chemical extends Phaser.Scene {
                 .setScrollFactor(0)
                 .setDepth(1000)
                 .setAlpha(0);
-            const fit = Math.min(width / img.width, height / img.height, 1);
+            const fit = Math.max(width / img.width, height / img.height);
             img.setScale(fit);
             this.tweens.add({
                 targets: img,
