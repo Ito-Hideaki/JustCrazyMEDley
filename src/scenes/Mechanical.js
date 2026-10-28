@@ -18,12 +18,11 @@ export class Mechanical extends Phaser.Scene {
         this.load.image('tangye', 'assets/tangye.png');//タン・イー
         this.load.image('Akaten', 'assets/Akaten.png');//赤点
         this.load.image('Aoten', 'assets/Aoten.png');//青点
-        this.load.image('kuchu1', 'assets/kuchu1.png');//空中のオブジェクト
         this.load.image('block', 'assets/block-one.png');//壁・隠しブロック
         this.load.image('gameover', 'assets/gameover.png');
         this.load.image('life', 'assets/life.png');//ライフアイコン
         this.load.image('MechanicalDamageItem', 'assets/M-scooter.png');//機械工学科専用damageアイテム
-        this.load.image('enadori1', 'assets/enadori-1.png');//エナドリ
+        this.load.image('enadori1', 'assets/enadori-2.png');//エナドリ
         this.load.image('report1', 'assets/report-1.png');//レポート
     }
 
@@ -155,8 +154,17 @@ export class Mechanical extends Phaser.Scene {
         }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
 
         // プレイヤー
+        this.luckyZoneText = this.add.text(this.scale.width / 2, 40, 'ラッキーゾーン！！！！！', {
+            fontSize: '40px',
+            color: '#ffff00',
+            stroke: '#000000',
+            strokeThickness: 6,
+            padding: { top: 8, bottom: 8 }
+        }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(100).setVisible(false);
+
         this.characterStand = this.add.sprite(220, 0, 'MechanicalcharacterStand');//J（主人公）を配置
         this.characterStand.setScale(0.5) ;//J（主人公）のサイズを調整
+        this.playerHalfWidth = this.characterStand.displayWidth / 2;
         this.playerHalfHeight = this.characterStand.displayHeight / 2;//判定用の高さ（画像が切り替わっても変えない）
         this.characterStandBaseY = this.groundY - this.playerHalfHeight;
         this.characterStand.y = this.characterStandBaseY;
@@ -179,6 +187,10 @@ export class Mechanical extends Phaser.Scene {
         this.coyoteTimeRemaining = this.coyoteTime;
 
         // カメラ
+        this.isCameraRaised = false;
+        this.cameraHeightTween = null;
+        this.returnBarrier = null;
+        this.isLowerLaneLocked = false;
         const cam = this.cameras.main;
         cam.setBounds(0, 0, this.worldWidth, this.scale.height);
         cam.startFollow(this.characterStand, true, 0.1 , 0.1);
@@ -209,6 +221,7 @@ export class Mechanical extends Phaser.Scene {
         this.timeText.setText(`Time: ${this.elapsedSeconds.toFixed(1)}`);
         this.updateStarInvincibleText();
         this.run(deltaSeconds);
+        this.resolveLowerLaneRestriction(previousCharacterX);
         this.resolveWallCollisions(previousCharacterX);
         if (this.characterStand.x > this.worldWidth) {
             this.leaveStage();
@@ -238,7 +251,7 @@ export class Mechanical extends Phaser.Scene {
         this.characterStandVelocityY += this.gravity * deltaSeconds;//重力を適用
         this.characterStand.y += this.characterStandVelocityY * deltaSeconds;//Y軸の位置を更新
 
-        const characterBounds = this.characterStand.getBounds();//キャラクターのバウンディングボックスを取得
+        const characterBounds = this.getPlayerCollisionBounds();
         const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
         for (const platform of solidBlocks) {
             const platformBounds = platform.getBounds();//空中ブロックのバウンディングボックスを取得
@@ -286,6 +299,7 @@ export class Mechanical extends Phaser.Scene {
             this.isGrounded = true;//地面にいることを示す
         }
 
+        this.resolveLowerLaneRestriction(this.characterStand.x);
         this.updateHiddenBlockVisibility();
         this.updateMovers(deltaSeconds);
         this.updateEnadori(deltaSeconds);
@@ -380,8 +394,131 @@ export class Mechanical extends Phaser.Scene {
         }
 
         // 地面のスクロール
+        this.updateCameraHeight();
+        this.updateReturnBarrier();
         this.leftXText.setText(`X: ${Math.round(this.cameras.main.scrollX)}`);
         this.previousCharacterX = this.characterStand.x;
+    }
+
+    resolveLowerLaneRestriction(previousX) {
+        const zoneLeft = this.cameraHeightTrigger.x;
+        const zoneRight = 10615 + this.textures.get('block').getSourceImage().width;
+        const zoneBottom = 105;
+        const bounds = this.getPlayerCollisionBounds();
+        if (!this.isLowerLaneLocked &&
+            !this.cameraHeightTrigger.getData('expanded') &&
+            this.characterStand.x >= zoneLeft && this.characterStand.x < zoneRight &&
+            bounds.top >= zoneBottom) {
+            this.isLowerLaneLocked = true;
+            const blockTexture = this.textures.get('block').getSourceImage();
+            const blockCount = Math.ceil((zoneBottom + this.scale.height) / blockTexture.height);
+            const [wall] = this.placeWall(
+                zoneRight - blockTexture.width, zoneBottom, blockCount
+            );
+            this.fadeInWall(wall);
+        }
+        if (!this.isLowerLaneLocked || bounds.right <= zoneLeft ||
+            bounds.left >= zoneRight || bounds.top >= zoneBottom) {
+            return;
+        }
+
+        // 下レーン確定後は上ゾーンの左右と底面からの侵入だけを防ぐ。
+        if (previousX + this.playerHalfWidth <= zoneLeft) {
+            this.characterStand.x = zoneLeft - this.playerHalfWidth;
+        } else if (previousX - this.playerHalfWidth >= zoneRight) {
+            this.characterStand.x = zoneRight + this.playerHalfWidth;
+        } else {
+            this.characterStand.y = zoneBottom + this.playerHalfHeight;
+            this.characterStandVelocityY = Math.max(0, this.characterStandVelocityY);
+        }
+    }
+
+    updateReturnBarrier() {
+        const blockTexture = this.textures.get('block').getSourceImage();
+        const barrierLeft = 10615 - blockTexture.width + 35;
+        if (this.returnBarrier || !this.cameraHeightTrigger.getData('expanded') ||
+            this.characterStand.getBounds().left < barrierLeft + blockTexture.width) {
+            return;
+        }
+
+        const barrierTop = 105;
+        const blockCount = Math.ceil((this.groundY - barrierTop) / blockTexture.height) - 1;
+        const barrierBottom = barrierTop + blockCount * blockTexture.height;
+        [this.returnBarrier] = this.placeWall(
+            barrierLeft,
+            barrierBottom,
+            blockCount
+        );
+        const wall = this.returnBarrier;
+        const growth = { height: 1 };
+        wall.setSize(wall.width, growth.height);
+        wall.y = barrierBottom - growth.height;
+        this.tweens.add({
+            targets: growth,
+            height: blockCount * blockTexture.height,
+            duration: 600,
+            ease: 'Sine.easeInOut',
+            onUpdate: () => {
+                wall.setSize(wall.width, growth.height);
+                wall.y = barrierBottom - growth.height;
+            }
+        });
+    }
+
+    fadeInWall(wall) {
+        wall.setAlpha(0);
+        this.tweens.add({
+            targets: wall,
+            alpha: 1,
+            duration: 600,
+            ease: 'Sine.easeInOut'
+        });
+    }
+
+    updateCameraHeight() {
+        const triggerBounds = this.cameraHeightTrigger.getBounds();
+        const playerBounds = this.characterStand.getBounds();
+        const isAboveTrigger =
+            !this.isLowerLaneLocked &&
+            playerBounds.right > triggerBounds.left &&
+            playerBounds.left < triggerBounds.right &&
+            this.characterStand.y + this.playerHalfHeight <= this.cameraHeightTrigger.getData('cameraTriggerTop');
+        if (isAboveTrigger && !this.cameraHeightTrigger.getData('expanded')) {
+            const wall = this.cameraHeightTrigger;
+            const bottomY = triggerBounds.bottom;
+            const height = this.textures.get('block').getSourceImage().height * 10;
+            wall.setSize(wall.width, height);
+            wall.y = bottomY - height;
+            wall.setData('expanded', true);
+            this.fadeInWall(wall);
+            // 伸びた壁にキャラクターが埋まらないよう、足元を上面まで持ち上げる。
+            this.characterStand.y = Math.min(this.characterStand.y, wall.y - this.playerHalfHeight);
+        }
+        const isOnGround = this.isGrounded && this.characterStand.y === this.characterStandBaseY;
+        const shouldRaise = !isOnGround && (this.isCameraRaised || isAboveTrigger);
+        if (shouldRaise === this.isCameraRaised) {
+            return;
+        }
+
+        this.isCameraRaised = shouldRaise;
+        this.luckyZoneText.setVisible(shouldRaise);
+        this.starInvincibleText.setY(shouldRaise ? 100 : 40);
+        this.damageCauseText.setY(shouldRaise ? 160 : 40);
+        this.updatePlayerGlow();
+        const cam = this.cameras.main;
+        this.cameraHeightTween?.stop();
+        const height = { y: cam.scrollY };
+        this.cameraHeightTween = this.tweens.add({
+            targets: height,
+            y: shouldRaise ? -100 : 0,
+            duration: 600,
+            ease: 'Sine.easeInOut',
+            onUpdate: () => {
+                // 上下追従で補正されないよう、境界も視点と一緒に移動する。
+                cam.setBounds(0, height.y, this.worldWidth, this.scale.height);
+                cam.scrollY = height.y;
+            }
+        });
     }
 
     // 上から踏むと消滅してジャンプ、横や下から当たるとダメージを受けて相手は消える
@@ -468,7 +605,8 @@ export class Mechanical extends Phaser.Scene {
         const viewH = this.scale.height;
         const maxScrollX = this.worldWidth - viewW;
         const savedScrollX = cam.scrollX;
-        const hudTexts = [this.tangyeCountText, this.tangyeCountIcon, ...this.lifeIcons, this.leftXText, this.timeText, this.damageCauseText, this.stompCountText, this.starInvincibleText];
+        this.cameraHeightTween?.pause();
+        const hudTexts = [this.tangyeCountText, this.tangyeCountIcon, ...this.lifeIcons, this.leftXText, this.timeText, this.damageCauseText, this.stompCountText, this.starInvincibleText, this.luckyZoneText];
 
         cam.stopFollow();
         const hudVisibility = hudTexts.map(text => text.visible);
@@ -485,6 +623,7 @@ export class Mechanical extends Phaser.Scene {
             cam.setFollowOffset(-300, 0);
             cam.scrollX = savedScrollX;
             this.isCapturing = false;
+            this.cameraHeightTween?.resume();
 
             const a = document.createElement('a');
             a.href = canvas.toDataURL('image/png');
@@ -531,7 +670,8 @@ export class Mechanical extends Phaser.Scene {
     // 落とし穴を [左端X, 幅] の一覧で指定する。3個。穴の部分だけ地面を作らない
     placeAllPits() {
         const pits = [
-            [4500, 200], [5100, 400], [9100, 1400],
+            [1825, 600],[1825+1500, 600],[7200,250],[7900,150],[8350,150],[8650,150],[8950,150],[9250,150],
+            [11520,300],[11920,100],[12120,100],[12320,100]
         ];
         pits.forEach(([x, width]) => this.pits.push({ left: x, right: x + width }));
 
@@ -551,35 +691,46 @@ export class Mechanical extends Phaser.Scene {
         }
         const ground = this.add.tileSprite(left, this.groundY, width, this.groundHeight, 'ground1').setOrigin(0, 0);
         ground.tilePositionX = left;
-        this.add.rectangle(left, this.groundY, width, 6, 0x75c645).setOrigin(0, 0);//地面の境界
     }
 
 
-    // 空中ブロックを1個、指定した座標に配置する
-    placePlatform(x, y) {
-        const platform = this.add.tileSprite(x, y, 275, 35, 'kuchu1');
-        this.platformGroup.add(platform);
-        return platform;
-    }
-
-    // 底辺の左端座標とブロック数を指定して、縦に壁を配置する
-    placeWall(x, y, blockCount) {
+    // 指定した中心座標に、block-oneを横に並べて空中ブロックを配置する
+    placePlatform(x, y, blockCount = 8) {
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(blockCount) || blockCount < 1) {
-            throw new RangeError('placeWall requires finite coordinates and a positive integer blockCount');
+            throw new RangeError('placePlatform requires finite coordinates and a positive integer blockCount');
         }
 
-        const blockTexture = this.textures.get('block').getSourceImage();
+        const blockWidth = this.textures.get('block').getSourceImage().width;
         const blocks = [];
         for (let i = 0; i < blockCount; i++) {
             const block = this.add.image(
-                x + blockTexture.width / 2,
-                y - (i + 0.5) * blockTexture.height,
+                x - (blockCount * blockWidth) / 2 + (i + 0.5) * blockWidth,
+                y,
                 'block'
             );
-            this.wallGroup.add(block);
+            this.platformGroup.add(block);
             blocks.push(block);
         }
         return blocks;
+    }
+
+    // 底辺の左端座標とブロック数を指定して、縦に壁を配置する
+    placeWall(x, y, blockCount, columnCount = 1) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isInteger(blockCount) || blockCount < 1 ||
+            !Number.isInteger(columnCount) || columnCount < 1) {
+            throw new RangeError('placeWall requires finite coordinates and positive integer block and column counts');
+        }
+
+        const blockTexture = this.textures.get('block').getSourceImage();
+        const wall = this.add.tileSprite(
+            x,
+            y - blockCount * blockTexture.height,
+            columnCount * blockTexture.width,
+            blockCount * blockTexture.height,
+            'block'
+        ).setOrigin(0, 0);
+        this.wallGroup.add(wall);
+        return [wall];
     }
 
     // 隠しブロックを横にblockCount個並べて配置する。どれを叩いても全体が現れ、タン・イーは1個だけ出る
@@ -626,9 +777,19 @@ export class Mechanical extends Phaser.Scene {
     placeAllHiddenBlocks() {
         // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
+            [70,360,4],[10900,220,3],[11140,60,3]
         ];
         hiddenBlocks.forEach(([x, y, blockCount]) =>
             this.placeHiddenBlock(x, y, blockCount));
+    }
+
+    getPlayerCollisionBounds() {
+        return new Phaser.Geom.Rectangle(
+            this.characterStand.x - this.playerHalfWidth,
+            this.characterStand.y - this.playerHalfHeight,
+            this.playerHalfWidth * 2,
+            this.playerHalfHeight * 2
+        );
     }
 
     resolveWallCollisions(previousX) {
@@ -637,7 +798,7 @@ export class Mechanical extends Phaser.Scene {
             return;
         }
 
-        const playerBounds = this.characterStand.getBounds();
+        const playerBounds = this.getPlayerCollisionBounds();
         for (const block of this.wallGroup.getChildren()) {
             const blockBounds = block.getBounds();
             const overlapsY = playerBounds.bottom > blockBounds.top && playerBounds.top < blockBounds.bottom;
@@ -645,14 +806,14 @@ export class Mechanical extends Phaser.Scene {
                 continue;
             }
 
-            if (deltaX > 0 && previousX + this.characterStand.displayWidth / 2 <= blockBounds.left &&
+            if (deltaX > 0 && previousX + this.playerHalfWidth <= blockBounds.left &&
                 playerBounds.right >= blockBounds.left) {
-                this.characterStand.x = blockBounds.left - this.characterStand.displayWidth / 2;
+                this.characterStand.x = blockBounds.left - this.playerHalfWidth;
                 return;
             }
-            if (deltaX < 0 && previousX - this.characterStand.displayWidth / 2 >= blockBounds.right &&
+            if (deltaX < 0 && previousX - this.playerHalfWidth >= blockBounds.right &&
                 playerBounds.left <= blockBounds.right) {
-                this.characterStand.x = blockBounds.right + this.characterStand.displayWidth / 2;
+                this.characterStand.x = blockBounds.right + this.playerHalfWidth;
                 return;
             }
         }
@@ -774,18 +935,67 @@ export class Mechanical extends Phaser.Scene {
     // 空中ブロック15個の座標一覧
     placeAllPlatforms() {
         const platforms = [
-            [1000, 460],  [2500, 300],  [3000, 460],  [3000, 140],  [5800, 300],
-            [6400, 460],  [8100, 460],  [8375, 300],  [9300, 550],  [9750, 420],
-            [10200, 510], [11200, 300], [11800, 460], [11800, 140], [15000, 460],
+            [700, 460, 2],[900, 460, 2],
         ];
-        platforms.forEach(([x, y]) => this.placePlatform(x, y));
+        platforms.forEach(([x, y, blockCount]) => this.placePlatform(x, y, blockCount));
     }
 
     // 壁を [左端X, 底辺Y, ブロック数] の一覧で指定する。ジャンプで越えられるのは5個まで
     placeAllWalls() {
+        const x = 1300;
+        const y = 2800;
+        const z = 4000;
+        const w = 10995;
         const walls = [
+            [x,this.groundY,3],[x+35,this.groundY,3],[x+70,this.groundY,3],
+            [x+105,this.groundY,6],[x+140,this.groundY,6],[x+175,this.groundY,6],
+            [x+210,this.groundY,9],[x+245,this.groundY,9],[x+280,this.groundY,9],
+            [x+315,this.groundY,12],[x+350,this.groundY,12],[x+385,this.groundY,12],
+            [x+420,this.groundY,15],[x+455,this.groundY,15],[x+490,this.groundY,15],
+            [y,this.groundY,3],[y+35,this.groundY,3],[y+70,this.groundY,3],
+            [y+105,this.groundY,6],[y+140,this.groundY,6],[y+175,this.groundY,6],
+            [y+210,this.groundY,9],[y+245,this.groundY,9],[y+280,this.groundY,9],
+            [y+315,this.groundY,12],[y+350,this.groundY,12],[y+385,this.groundY,12],
+            [y+420,this.groundY,15],[y+455,this.groundY,15],[y+490,this.groundY,15],
+            [z+105,105,7],[z+140,105,3],[z+175,105,3],
+            [z+210,210,6],[z+245,210,6],[z+280,210,6],
+            [z+315,315,9],[z+350,315,9],[z+385,315,9],
+            [10545,105,3],[10580,105,3],[10615,105,3],
+            [10440,210,6],[10475,210,6],[10510,210,6],
+            [10335,315,9],[10370,315,9],[10405,315,9],
+            [w,this.groundY,3],[w+35,this.groundY,3],[w+70,this.groundY,3],[w+105,this.groundY,6],
+            [w+140,this.groundY,6],[w+175,this.groundY,6],[w+210,this.groundY,9],[w+245,this.groundY,9],
+            [w+280,this.groundY,9],[w+315,this.groundY,12],[w+350,this.groundY,12],[w+385,this.groundY,12],
+            [w+420,this.groundY,15],[w+455,this.groundY,15],[w+490,this.groundY,15],
         ];
-        walls.forEach(([x, y, blockCount]) => this.placeWall(x, y, blockCount));
+        for (let i = 1; i < 170; i++) {
+            if(((i>=40&i<=75)|(i>=150&i<170))&(i%10==0|i%10==1|i%10==2)){
+                walls.push([z+385+i*35, 420, 12],);
+            }else {
+                walls.push([z+385+i*35, 315, 9],);
+            }
+        };
+        const blockWidth = this.textures.get('block').getSourceImage().width;
+        const wallRuns = [];
+        walls.forEach(([left, bottomY, blockCount]) => {
+            const previousRun = wallRuns[wallRuns.length - 1];
+            const isAdjacentRun = previousRun &&
+                previousRun.bottomY === bottomY &&
+                previousRun.blockCount === blockCount &&
+                Math.abs(left - (previousRun.left + previousRun.columnCount * blockWidth)) < 0.001;
+            if (isAdjacentRun) {
+                previousRun.columnCount += 1;
+            } else {
+                wallRuns.push({ left, bottomY, blockCount, columnCount: 1 });
+            }
+        });
+        wallRuns.forEach(({ left, bottomY, blockCount, columnCount }) => {
+            const [wall] = this.placeWall(left, bottomY, blockCount, columnCount);
+            if (left === z + 105 && bottomY === 105 && blockCount === 7) {
+                this.cameraHeightTrigger = wall;
+                wall.setData('cameraTriggerTop', wall.y);
+            }
+        });
     }
 
     // タン・イーを1個、座標を指定して配置する
@@ -800,31 +1010,38 @@ export class Mechanical extends Phaser.Scene {
     // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
-            [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 250],
-            [3000, 590],  [3000, 410],  [3000, 90],  [4600, 350],  [5200, 350],
-            [5400, 350],  [6400, 230],  [7100, 590],  [7500, 590],  [8050, 330],
-            [8150, 330],  [8350, 90],  [8450, 90], [9300, 400], [9750, 90],
-            [10200, 400], [11200, 150], [11800, 90], [11800, 400], [135000, 590],
-            [140000, 590], [145000, 590], [150000, 590], [155000, 590], [160000, 590],
+            [700, 435], [700,100],[900, 435], [900,100],
+            [5750,360],[6100,360],[6450,360],[6800,360],[7900,360],[8200,360],[8500,360],[8800,360],[9100,360],[9600,360],[9950,360],
+            [5500,this.groundY-25],[5900,this.groundY-25],[6250,this.groundY-25],[12600,this.groundY-25],
         ];
+        for (let i = 1; i <= 18; i++) {
+                positions.push([4000+i*350, -25],);
+        };
         positions.forEach(([x, y]) => {
             this.placeTangye(x, y);
         });
     }
 
-    // 上下に動くタン・イーを配置する
+    // 上下または左右に動くタン・イーを配置する
     placeAllMoveTangye() {
-        // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
+        // [中心x, 中心y, 中心からの移動幅, 移動方向]。省略時は 'vertical'、左右は 'horizontal'
         const moves = [
-            [1600, 350, 100],
+            [1335,this.groundY-300,120,'vertical'],[1545,this.groundY-510,-120,'vertical'],[1790, this.groundY-720, -120,'vertical'],
+            [2125, this.groundY-600, 120, 'horizontal'],[2550, this.groundY-35, 120, 'horizontal'],
+            [1335+1500,this.groundY-300,120,'vertical'],[1545+1500,this.groundY-510,-120,'vertical'],[1790+1500, this.groundY-720, -120,'vertical'],
+            [2125+1500, this.groundY-600, 120, 'horizontal'],[2550+1500 , this.groundY-35, 120, 'horizontal'],
+            [7600, this.groundY-35,-70,'horizontal'],[7800, this.groundY-35,70,'horizontal']
         ];
-        moves.forEach(([x, centerY, range], i) => {
-            const tangye = this.placeTangye(x, centerY - range);
+        moves.forEach(([centerX, centerY, range, axis = 'vertical'], i) => {
+            const tangye = this.placeTangye(
+                axis === 'horizontal' ? centerX - range : centerX,
+                axis === 'horizontal' ? centerY : centerY - range
+            );
             tangye.setData('moving', true);
             tangye.setScale(0.3);//動くタン・イーは少し大きくする
             this.tweens.add({
                 targets: tangye,
-                y: centerY + range,
+                ...(axis === 'horizontal' ? { x: centerX + range } : { y: centerY + range }),
                 duration: 1500,
                 ease: 'Sine.easeInOut',
                 yoyo: true,
@@ -845,7 +1062,7 @@ export class Mechanical extends Phaser.Scene {
     placeAllAkaten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [2000, 590, 80, 'horizontal'],
+            [4700, 590, 500, 'horizontal'],[10970,this.groundY-35,200,'horizontal'],[11327.5,this.groundY-640,200,'vertical']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const akaten = this.placeAkaten(
@@ -869,7 +1086,7 @@ export class Mechanical extends Phaser.Scene {
     placeAllAoten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [7300, 590, 100, 'horizontal'],
+            [11870,this.groundY-35,0,'horizontal'],[12070,this.groundY-35,0,'horizontal'],[12270,this.groundY-35,0,'horizontal']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const aoten = this.placeAoten(
@@ -882,37 +1099,84 @@ export class Mechanical extends Phaser.Scene {
         });
     }
 
-    // レポートを1個配置する。中心のx座標・y座標と、中心から左右に動く幅を指定する
-    placeReport(centerX, y, range) {
-        const report = this.add.image(centerX - range, y, 'report1');
+    // レポートを1個配置する。移動方向は 'horizontal' または 'vertical'
+    placeReport(centerX, centerY, range, axis = 'horizontal') {
+        const report = this.add.image(
+            axis === 'vertical' ? centerX : centerX - range,
+            axis === 'vertical' ? centerY - range : centerY,
+            'report1'
+        );
         report.setScale(0.5);//レポートのサイズ（元画像108×88）
         report.setData('moving', true);
-        report.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
+        report.setData('swing', { centerX, centerY, range, axis, phase: 0, direction: 1 });
         this.reportGroup.add(report);
         this.itemPreviousPositions.set(report, { x: report.x, y: report.y });
         return report;
     }
 
-    // レポートの一覧。[中心x, y, 中心から左右に動く幅]。1つずつ設定する
+    // レポートの一覧。[中心x, 中心y, 移動幅, 移動方向]。省略時は 'horizontal'、上下は 'vertical'
     placeAllReports() {
         const reports = [
-            [450, this.groundY - 25, 50],
+            [1440,this.groundY-405,-130,'vertical'],[1650,this.groundY-615,130,'vertical'],
+            [1440+1500,this.groundY-405,-130,'vertical'],[1650+1500,this.groundY-615,130,'vertical'], 
+            [6800,this.groundY-25,400,'horizontal'],[8200,this.groundY-25,150,'horizontal']
         ];
-        reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
+        reports.forEach(([centerX, centerY, range, axis]) => this.placeReport(centerX, centerY, range, axis));
     }
 
     // スクーターとエナドリは交互に出す。最初の1個はスクーター
     placeAllDepartmentDamage() {
-        this.placeScooter(1500, this.groundY - 20);
+        this.placeScooter(1500, this.groundY - 15);
         this.nextMechanicalHazard = 'enadori';
+    }
+
+    findHazardSpawnX(x, y, width, height) {
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
+        const solidBounds = [
+            ...this.platformGroup.getChildren(),
+            ...this.wallGroup.getChildren(),
+        ].map(block => block.getBounds());
+        const step = 10;
+
+        for (let distance = 0; distance <= this.worldWidth; distance += step) {
+            const candidates = distance === 0 ? [x] : [x - distance, x + distance];
+            for (const candidateX of candidates) {
+                if (candidateX - halfWidth < 0 || candidateX + halfWidth > this.worldWidth) {
+                    continue;
+                }
+                const overlapsPit = this.pits.some(pit =>
+                    candidateX + halfWidth > pit.left && candidateX - halfWidth < pit.right
+                );
+                const overlapsSolid = solidBounds.some(bounds =>
+                    candidateX + halfWidth > bounds.left &&
+                    candidateX - halfWidth < bounds.right &&
+                    y + halfHeight > bounds.top &&
+                    y - halfHeight < bounds.bottom
+                );
+                if (!overlapsPit && !overlapsSolid) {
+                    return candidateX;
+                }
+            }
+        }
+        return null;
     }
 
     placeMechanicalHazard(x, y, type) {
         const isScooter = type === 'scooter';
-        const body = this.add.rectangle(x, y, isScooter ? 60 : 40, isScooter ? 30 : 40).setVisible(false);
-        const sprite = this.add.image(x, y, isScooter ? 'MechanicalDamageItem' : 'enadori1');
+        const bodyWidth = isScooter ? 60 : 40;
+        const bodyHeight = isScooter ? 30 : 40;
+        const spawnX = this.findHazardSpawnX(x, y, bodyWidth, bodyHeight);
+        if (spawnX === null) {
+            return null;
+        }
+        const body = this.add.rectangle(spawnX, y, bodyWidth, bodyHeight).setVisible(false);
+        const sprite = this.add.image(spawnX, y, isScooter ? 'MechanicalDamageItem' : 'enadori1');
         const image = this.textures.get(isScooter ? 'MechanicalDamageItem' : 'enadori1').getSourceImage();
-        sprite.setScale(isScooter ? Math.min(70 / image.width, 55 / image.height) : 0.5);
+        sprite.setScale(isScooter ? 1.5 * Math.min(70 / image.width, 55 / image.height) : 0.5);
+        if (isScooter) {
+            sprite.y = body.y + body.height / 2 - sprite.displayHeight / 2;
+        }
         body.setData('sprite', sprite);
         body.setData('type', type);
         body.setData('direction', -1);
@@ -925,7 +1189,7 @@ export class Mechanical extends Phaser.Scene {
         }
         body.setData('bobPhase', Phaser.Math.FloatBetween(0, Math.PI * 2));
         body.setData('damageMessage', isScooter
-            ? 'スクーターにぶつかった！'
+            ? '実習で分解したバイクが暴走した...'
             : 'カフェインの過剰摂取！寝なさい！');
         body.once('destroy', () => sprite.destroy());
         this.enadoriGroup.add(body);
@@ -971,7 +1235,7 @@ export class Mechanical extends Phaser.Scene {
                     return;
                 }
                 if (this.nextMechanicalHazard === 'scooter') {
-                    this.placeScooter(x, this.groundY - 20);
+                    this.placeScooter(x, this.groundY - 15);
                     this.nextMechanicalHazard = 'enadori';
                 } else {
                     this.placeEnadori(x, this.groundY - 20);
@@ -1039,7 +1303,10 @@ export class Mechanical extends Phaser.Scene {
             if (body.getData('type') === 'scooter') {
                 const bobPhase = body.getData('bobPhase') + Math.PI * 2 * 8 * deltaSeconds;
                 body.setData('bobPhase', bobPhase);
-                sprite.setPosition(body.x, body.y + Math.sin(bobPhase) * 2.5);
+                sprite.setPosition(
+                    body.x,
+                    body.y + halfHeight - sprite.displayHeight / 2 + Math.sin(bobPhase) * 2.5
+                );
                 sprite.setRotation(0);
             } else {
                 sprite.setPosition(body.x, body.y);
@@ -1054,7 +1321,7 @@ export class Mechanical extends Phaser.Scene {
 
     // キャラクターが上から対象に当たったかを判定する
     isHitFromAbove(target, allowUpperHalf = false) {
-        const playerBounds = this.characterStand.getBounds();
+        const playerBounds = allowUpperHalf ? this.characterStand.getBounds() : this.getPlayerCollisionBounds();
         const targetBounds = target.getBounds();
         const previousBottomY = this.previousCharacterY + this.playerHalfHeight;
         const currentBottomY = this.characterStand.y + this.playerHalfHeight;
@@ -1071,9 +1338,21 @@ export class Mechanical extends Phaser.Scene {
     fallIntoPit() {
         this.getDamage(1);
         const pit = this.pits.find(p => this.characterStand.x > p.left - this.characterStand.displayWidth && this.characterStand.x < p.right + this.characterStand.displayWidth);
-        const respawnX = pit ? pit.left - 150 : this.characterStand.x;
-        this.characterStand.x = Math.max(respawnX, this.characterStand.displayWidth / 2);
-        this.characterStand.y = this.characterStandBaseY;
+        const wallBounds = this.wallGroup.getChildren().map(block => block.getBounds());
+        const wallBeforePit = pit && wallBounds.filter(bounds => Math.abs(bounds.right - pit.left) <= 1);
+        if (wallBeforePit?.length) {
+            const wallLeft = Math.min(...wallBeforePit.map(bounds => bounds.left));
+            const wallTop = Math.min(...wallBeforePit.map(bounds => bounds.top));
+            this.characterStand.x = Math.min(
+                pit.left - this.characterStand.displayWidth / 2,
+                (wallLeft + pit.left) / 2
+            );
+            this.characterStand.y = wallTop - this.playerHalfHeight;
+        } else {
+            const respawnX = pit ? pit.left - 150 : this.characterStand.x;
+            this.characterStand.x = Math.max(respawnX, this.characterStand.displayWidth / 2);
+            this.characterStand.y = this.characterStandBaseY;
+        }
         this.characterStandVelocityY = 0;
         this.isGrounded = true;
         this.pitRespawnProtectionTimer?.remove(false);
@@ -1108,14 +1387,17 @@ export class Mechanical extends Phaser.Scene {
         this.starInvincibleText.setText(`無敵状態 のこり${seconds}秒`);
     }
 
-    startStarInvincible() {
-        this.isStarInvincible = true;
-        this.damageCauseTimer?.remove(false);
-        this.damageCauseText.setVisible(false);
-        this.starInvincibleText.setVisible(true);
-        this.stompCountText.setVisible(false);
-        this.starInvincibleTimer?.remove(false);
-        // 無敵モード中はキャラクターの周りを黄色で縁取りする（WebGLのときのみ）
+    updatePlayerGlow() {
+        if (!this.isStarInvincible && !this.isCameraRaised) {
+            if (this.starGlow) {
+                this.tweens.killTweensOf(this.starGlow);
+                this.characterStand.preFX.remove(this.starGlow);
+                this.starGlow = null;
+            }
+            return;
+        }
+
+        // 無敵モード・上のレーンでは同じ縁取りを共有する（WebGLのときのみ）。
         if (!this.starGlow && this.characterStand.preFX) {
             this.characterStand.preFX.padding = 8;
             this.starGlow = this.characterStand.preFX.addGlow(0xffff00, 6, 0, false, 0.1, 8);
@@ -1129,16 +1411,22 @@ export class Mechanical extends Phaser.Scene {
                 repeat: -1
             });
         }
+    }
+
+    startStarInvincible() {
+        this.isStarInvincible = true;
+        this.damageCauseTimer?.remove(false);
+        this.damageCauseText.setVisible(false);
+        this.starInvincibleText.setVisible(true);
+        this.stompCountText.setVisible(false);
+        this.starInvincibleTimer?.remove(false);
+        this.updatePlayerGlow();
         this.starInvincibleTimer = this.time.delayedCall(this.starInvincibleDuration, () => {
             this.isStarInvincible = false;
             this.starInvincibleTimer = null;
             this.starInvincibleText.setVisible(false);
             this.stompCountText.setVisible(true);
-            if (this.starGlow) {
-                this.tweens.killTweensOf(this.starGlow);
-                this.characterStand.preFX.remove(this.starGlow);
-                this.starGlow = null;
-            }
+            this.updatePlayerGlow();
         });
         this.updateStarInvincibleText();
     }
