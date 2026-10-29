@@ -778,7 +778,7 @@ export class Mechanical extends Phaser.Scene {
     placeAllHiddenBlocks() {
         // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
-            [70,360,4],[10900,220,3],[11140,60,3]
+            [70,360,4],[10900,240,3],[11140,60,3]
         ];
         hiddenBlocks.forEach(([x, y, blockCount]) =>
             this.placeHiddenBlock(x, y, blockCount));

@@ -529,10 +529,10 @@ export class Electrical extends Phaser.Scene {
         this.lifeIcons.forEach((icon, i) => icon.setAlpha(i < this.life ? 1 : 0.25));
     }
 
-    // 落とし穴を [左端X, 幅] の一覧で指定する。3個。穴の部分だけ地面を作らない
+    // 落とし穴を [左端X, 幅] の一覧で指定する。穴の部分だけ地面を作らない
     placeAllPits() {
         const pits = [
-            [4500, 200], [5100, 400], [9100, 1400],
+            [1680, 210],
         ];
         pits.forEach(([x, width]) => this.pits.push({ left: x, right: x + width }));
 
@@ -552,7 +552,6 @@ export class Electrical extends Phaser.Scene {
         }
         const ground = this.add.tileSprite(left, this.groundY, width, this.groundHeight, 'ground1').setOrigin(0, 0);
         ground.tilePositionX = left;
-        this.add.rectangle(left, this.groundY, width, 6, 0x75c645).setOrigin(0, 0);//地面の境界
     }
 
 
@@ -581,6 +580,25 @@ export class Electrical extends Phaser.Scene {
             blocks.push(block);
         }
         return blocks;
+    }
+
+    placeTerrain(x, y, columnCount, rowCount) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) ||
+            !Number.isInteger(columnCount) || columnCount < 1 ||
+            !Number.isInteger(rowCount) || rowCount < 1) {
+            throw new RangeError('placeTerrain requires finite coordinates and positive integer dimensions');
+        }
+
+        const blockTexture = this.textures.get('block').getSourceImage();
+        const terrain = this.add.tileSprite(
+            x + (columnCount * blockTexture.width) / 2,
+            y + (rowCount * blockTexture.height) / 2,
+            columnCount * blockTexture.width,
+            rowCount * blockTexture.height,
+            'block'
+        );
+        this.wallGroup.add(terrain);
+        return terrain;
     }
 
     // 隠しブロックを横にblockCount個並べて配置する。どれを叩いても全体が現れ、タン・イーは1個だけ出る
@@ -627,6 +645,7 @@ export class Electrical extends Phaser.Scene {
     placeAllHiddenBlocks() {
         // [x座標, y座標, 横に並べる個数]
         const hiddenBlocks = [
+            [500,430,3],[500,210,3],[5197,450,3]
         ];
         hiddenBlocks.forEach(([x, y, blockCount]) =>
             this.placeHiddenBlock(x, y, blockCount));
@@ -776,21 +795,35 @@ export class Electrical extends Phaser.Scene {
         });
     }
 
-    // 空中ブロック15個の座標一覧
+    // 空中ブロックの座標一覧
     placeAllPlatforms() {
-        const platforms = [
-            [1000, 460],  [2500, 300],  [3000, 460],  [3000, 140],  [5800, 300],
-            [6400, 460],  [8100, 460],  [8375, 300],  [9300, 550],  [9750, 420],
-            [10200, 510], [11200, 300], [11800, 460], [11800, 140], [15000, 460],
-        ];
+        const platforms = [];
         platforms.forEach(([x, y]) => this.placePlatform(x, y));
     }
 
-    // 壁を [左端X, 底辺Y, ブロック数] の一覧で指定する。ジャンプで越えられるのは5個まで
+    // 地形を [左上X, 左上Y, 横のブロック数, 縦のブロック数] の一覧で指定する
     placeAllWalls() {
-        const walls = [
+        const terrain = [
+            [0, 0, 366, 1],
+            [980, 385, 20, 2], [1365, 245, 9, 4],
+            [1890, 245, 7, 4], [1890, 385, 17, 2],
+            [2905, 280, 18, 4], [3815, 245, 34, 5], [4060, 35, 7, 6],
+            [5250, this.groundY-420, 7, 12],
+            [5775, 35, 5, 10], [5775, this.groundY-105, 5, 3],
+            [6125, 35, 6, 6], [6125, this.groundY-245, 6, 7],
+            [6510, 35, 6, 2], [6510, this.groundY-385, 6, 11],
+            [6895, 175, 5, 9],
+            [7280, 35, 5, 10], [7280, this.groundY-105, 5, 3],
+            [7630, 175, 13, 2], [7630, 245, 6, 7],
+            [8330, 210, 7, 1], [8820, 210, 7, 1],
+            [9345, 210, 7, 1], [9835, 210, 14, 1],
+            [10080, 35, 7, 11], 
+            [10535, 245, 5, 2], [11130, 315, 6, 3],
+            [10640, this.groundY-105, 6, 3], [11445, this.groundY-70, 6, 2],
+            [11585, 175, 5, 3], [12005, 230, 3, 1],
+            [11970, this.groundY-210, 5, 3], [12005, this.groundY-105, 3, 3],
         ];
-        walls.forEach(([x, y, blockCount]) => this.placeWall(x, y, blockCount));
+        terrain.forEach(([x, y, columns, rows]) => this.placeTerrain(x, y, columns, rows));
     }
 
     // タン・イーを1個、座標を指定して配置する
@@ -805,12 +838,11 @@ export class Electrical extends Phaser.Scene {
     // タン・イーの座標一覧
     placeAllTangye() {
         const positions = [
-            [500, 460],  [1000, 590],  [1000, 300],  [1350, 460],  [2500, 250],
-            [3000, 590],  [3000, 410],  [3000, 90],  [4600, 350],  [5200, 350],
-            [5400, 350],  [6400, 230],  [7100, 590],  [7500, 590],  [8050, 330],
-            [8150, 330],  [8350, 90],  [8450, 90], [9300, 400], [9750, 90],
-            [10200, 400], [11200, 150], [11800, 90], [11800, 400], [135000, 590],
-            [140000, 590], [145000, 590], [150000, 590], [155000, 590], [160000, 590],
+            [1153, 564], [1529, 564], [1779, 98], [1779, 691],
+            [2029, 564], [2342, 564], [3223, 520], [3912, 139], [4476, 139],
+            [4790, 139], [5604, 562], [6236, 309], [6611, 182], [6985, 97],
+            [8426, 97], [8927, 95], [9425, 96], [9988, 96], [10614, 139],
+            [10927, 477], [11678, 96], [11803, 562],
         ];
         positions.forEach(([x, y]) => {
             this.placeTangye(x, y);
@@ -821,7 +853,15 @@ export class Electrical extends Phaser.Scene {
     placeAllMoveTangye() {
         // [x座標, 上下運動の中心y, 中心から上下に動く幅]。1つずつ設定する
         const moves = [
-            [1800, 350, 100],
+            [650, 230, 20],
+            [1779, 469, 60],
+            [3911, 551, 55],
+            [4791, 551, 55],
+            [7550, 173, 70],
+            [7550, 427, 70],
+            [10614, 424, 70],
+            [10989, 170, 70],
+            [11551, 467, 60],
         ];
         moves.forEach(([x, centerY, range], i) => {
             const tangye = this.placeTangye(x, centerY - range);
@@ -850,7 +890,9 @@ export class Electrical extends Phaser.Scene {
     placeAllAkaten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [2200, 590, 80, 'horizontal'],
+            [6985, 596, 90, 'horizontal'],
+            [11241, 551, 80, 'horizontal'],
+            [300,300,30,'horizontal']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const akaten = this.placeAkaten(
@@ -874,7 +916,9 @@ export class Electrical extends Phaser.Scene {
     placeAllAoten() {
         // [中心x, 中心y, 中心からの移動幅, 移動方向]。移動方向は 'horizontal' または 'vertical'
         const moves = [
-            [7400, 590, 100, 'horizontal'],
+            [8801, 573, 90, 'horizontal'],
+            [9553, 573, 90, 'horizontal'],
+            [12500,this.groundY-35,300,'horizontal']
         ];
         moves.forEach(([centerX, centerY, range, axis = 'horizontal']) => {
             const aoten = this.placeAoten(
@@ -909,7 +953,6 @@ export class Electrical extends Phaser.Scene {
     // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
     placeAllDepartmentDamage() {
         const items = [
-            [2500, this.groundY - 25, 120, '感電してしまった！'],
         ];
         items.forEach(([centerX, y, range, damageMessage]) => {
             const item = this.add.image(centerX - range, y, 'ElectricalDamageItem');
