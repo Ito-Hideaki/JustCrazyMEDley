@@ -1,4 +1,5 @@
 import { createEmptySaveData, encodeSpell } from '../saveData.js';
+import { FINAL_REQUIRED } from '../minigames/engineering.js';
 
 export class Home extends Phaser.Scene {
 
@@ -61,7 +62,6 @@ export class Home extends Phaser.Scene {
         // 学科ブロック。順番はセーブデータのステージ番号と同じ
         const saveData = this.registry.get('saveData') ?? createEmptySaveData();
         const totalTangye = saveData.stages.reduce((sum, count) => sum + count, 0);
-        const FINAL_REQUIRED = 150;//ファイナルが現れる合計取得数
         const stages = [
             { label: '機械工学科', scene: 'Mechanical', saveIndex: 0 },
             { label: '電気工学科', scene: 'Electrical', saveIndex: 1 },

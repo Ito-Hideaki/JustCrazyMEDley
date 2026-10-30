@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const context = vm.createContext({});
 const src = fs.readFileSync(require('node:path').join(__dirname, '../src/minigames/engineering.js'), 'utf8').replace(/export /g, '');
-vm.runInContext(src + '\nglobalThis.rules = {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,phasePosition,logicAnswer,demoKey};', context);
-const {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,phasePosition,logicAnswer,demoKey} = context.rules;
+vm.runInContext(src + '\nglobalThis.rules = {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,phasePosition,logicAnswer,demoKey,createDemoGame,getFinalDifficulty};', context);
+const {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,phasePosition,logicAnswer,demoKey,createDemoGame,getFinalDifficulty} = context.rules;
 const rng = seed => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
 function solve(s) {
     const press = key => pressGame(s, key, s.elapsed);
@@ -39,7 +39,7 @@ function solve(s) {
                 if(s.cursor===obstacle.lane) press(s.cursor===4?'ArrowLeft':'ArrowRight');
                 advanceGame(s,obstacle.at);
             }
-            advanceGame(s,7); break;
+            advanceGame(s,s.surviveUntil); break;
         case 'titrate': for(let i=0;i<s.target;i++) press('Space'); press('ArrowUp'); break;
         case 'scope': move(...s.target); press('Space'); break;
     }
@@ -79,7 +79,7 @@ test('wrong inputs give helpful retries instead of instant losses', () => {
 
 test('animated examples solve every game using the same rules as the player', () => {
     for(const game of GAMES) for(let tier=0;tier<3;tier++) for(let seed=1;seed<=10;seed++) {
-        const s=createGame(game.id,tier,rng(seed)); let next=0;
+        const s=createDemoGame(createGame(game.id,tier,rng(seed))); let next=0;
         for(let t=0;t<s.duration && s.result===null;t+=0.03) {
             advanceGame(s,t);
             if(s.result===null && t>=next) {
@@ -88,5 +88,74 @@ test('animated examples solve every game using the same rules as the player', ()
             }
         }
         assert.equal(s.result,true,`demo: ${game.id}, tier ${tier}, seed ${seed}`);
+    }
+});
+
+test('every demo has a different puzzle and leaves the live round untouched', () => {
+    const signature = s => JSON.stringify(
+        s.id==='bolt'||s.id==='mix' ? s.sequence :
+        s.id==='wire' ? s.blocks :
+        s.id==='phase' ? s.phaseOffset ?? Math.PI/2 :
+        s.id==='solder' ? s.targets :
+        s.id==='logic' ? [s.a,s.b,logicAnswer(s)] :
+        s.id==='sort' ? s.values :
+        s.id==='packet' ? [s.cursor,s.obstacles.map(o=>o.lane)] : s.target
+    );
+    for(const game of GAMES) for(let tier=0;tier<3;tier++) for(let seed=1;seed<=30;seed++) {
+        const live=createGame(game.id,tier,rng(seed));
+        const before=JSON.stringify(live);
+        const demo=createDemoGame(live);
+        assert.notEqual(signature(demo),signature(live),game.id);
+        const key=demoKey(demo);
+        if(key) pressGame(demo,key,0);
+        assert.equal(JSON.stringify(live),before,`${game.id}: demo must not mutate live round`);
+    }
+});
+
+const saveWithTotal = total => ({ stages: Array.from({length:5},(_,i)=>Math.max(0,Math.min(40,total-i*40))), totalTangye: 999 });
+test('difficulty uses only five clamped stage records and has correct endpoints', () => {
+    assert.equal(getFinalDifficulty(saveWithTotal(150)).challenge,1);
+    assert.equal(getFinalDifficulty(saveWithTotal(200)).challenge,0);
+    assert.equal(getFinalDifficulty(saveWithTotal(175)).challenge,0.5);
+    assert.equal(getFinalDifficulty({stages:[40,40,40,40,40,40],totalTangye:0}).total,200);
+    assert.equal(getFinalDifficulty({stages:[255,-1,NaN,Infinity,'40']}).total,40);
+    assert.equal(getFinalDifficulty().challenge,1);
+});
+test('each additional tangye makes every game no harder at the same round tier', () => {
+    for(let tier=0;tier<3;tier++) for(const game of GAMES) {
+        let previous;
+        for(let total=150;total<=200;total++) {
+            const difficulty=getFinalDifficulty(saveWithTotal(total));
+            const s=createGame(game.id,tier,rng(7),difficulty);
+            if(previous) {
+                assert.ok(s.duration>=previous.duration,`${game.id}: timer at ${total}`);
+                assert.ok(s.motionScale<=previous.motionScale);
+                assert.ok(s.phaseWindow>=previous.phaseWindow);
+                if(s.sequence) assert.ok(s.sequence.length<=previous.sequence.length);
+                if(s.width) assert.ok(s.width>=previous.width);
+                if(s.impact) assert.ok(s.impact>=previous.impact);
+                if(s.obstacleTravel) assert.ok(s.obstacleTravel>=previous.obstacleTravel);
+            }
+            previous=s;
+        }
+    }
+});
+test('all games and their separate demos stay solvable from 150 through 200 tangye', () => {
+    for(const total of [150,151,160,175,190,199,200]) for(const game of GAMES) for(let tier=0;tier<3;tier++) for(let seed=1;seed<=5;seed++) {
+        const difficulty=getFinalDifficulty(saveWithTotal(total));
+        const live=createGame(game.id,tier,rng(seed),difficulty);
+        const demo=createDemoGame(live);
+        assert.deepEqual(demo.difficulty,difficulty);
+        solve(live);
+        assert.equal(live.result,true,`${game.id} live at ${total}`);
+        let next=0;
+        for(let t=0;t<demo.duration && demo.result===null;t+=0.03) {
+            advanceGame(demo,t);
+            if(demo.result===null && t>=next) {
+                const key=demoKey(demo);
+                if(key) { pressGame(demo,key,t); next=t+0.48; }
+            }
+        }
+        assert.equal(demo.result,true,`${game.id} demo at ${total}, tier ${tier}, seed ${seed}`);
     }
 });

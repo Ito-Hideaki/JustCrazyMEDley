@@ -1,5 +1,5 @@
 import { createEmptySaveData } from '../saveData.js';
-import { DEPARTMENTS, makeDeck, createGame, advanceGame, pressGame, GUIDES, demoKey } from '../minigames/engineering.js';
+import { DEPARTMENTS, makeDeck, createGame, createDemoGame, getFinalDifficulty, advanceGame, pressGame, GUIDES, demoKey } from '../minigames/engineering.js';
 import { drawMicrogame } from '../minigames/drawEngineering.js';
 
 const ALLOWED = ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight', 'Space'];
@@ -21,6 +21,7 @@ export class Final extends Phaser.Scene {
         this.cameras.main.setScroll(0, 0);
         this.cameras.main.setBounds(0, 0, 1280, 720);
         this.mode = 'ready';
+        this.difficulty = getFinalDifficulty(this.registry.get('saveData') ?? createEmptySaveData());
         this.hasSubmitted = false;
         this.held = new Set();
         this.particles = [];
@@ -40,6 +41,7 @@ export class Final extends Phaser.Scene {
         this.add.rectangle(640, 47, 1280, 94, 0x1d2b41);
         this.heading = this.text(40, 18, '高専 MICRO LAB', 30, '#ffdd88');
         this.roundText = this.text(440, 27, '', 24);
+        this.text(440, 65, `取得単位 ${this.difficulty.total}/200　難易度：${this.difficulty.label}`, 16, '#b5c6dc');
         this.lifeText = this.text(1230, 25, '', 26, '#ff9690').setOrigin(1, 0);
         this.titleText = this.text(520, 123, '', 44).setOrigin(0.5, 0);
         this.subtitleText = this.text(520, 190, '', 22, '#b5c6dc').setOrigin(0.5, 0);
@@ -62,7 +64,7 @@ export class Final extends Phaser.Scene {
         this.overlayBody = this.text(640, 344, '', 26).setOrigin(0.5).setAlign('center').setDepth(31);
         this.overlayHint = this.text(640, 560, '', 27, '#8ae3b1').setOrigin(0.5).setDepth(31);
         this.showOverlay('高専 MICRO LAB',
-            '知識ゼロでも大丈夫！ 5つの分野で15のあそび\nまずは動くお手本。わかったらSPACEで挑戦！\n操作は矢印とSPACEだけ。4回失敗でやり直し\n最後まで進めば、みんなの卒論が完成！',
+            `知識ゼロでも大丈夫！ 5つの分野で15のあそび\nまずは動くお手本。わかったらSPACEで挑戦！\n操作は矢印とSPACEだけ。4回失敗でやり直し\n取得単位 ${this.difficulty.total}/200 → 難易度：${this.difficulty.label}\n単位を多く集めるほど、時間・操作に余裕ができるよ！`,
             'SPACE：研究開始     ←：学科選択へ');
         this.refreshHud();
         this.input.keyboard.addCapture(['LEFT', 'DOWN', 'UP', 'RIGHT', 'SPACE']);
@@ -115,10 +117,11 @@ export class Final extends Phaser.Scene {
         this.startRound();
     }
     startRound() {
-        this.current = createGame(this.deck[this.roundIndex], Math.floor(this.roundIndex / 5));
+        this.current = createGame(this.deck[this.roundIndex], Math.floor(this.roundIndex / 5), Math.random, this.difficulty);
         const dept = DEPARTMENTS[this.current.dept];
         this.mode = 'intro';
-        this.demo = JSON.parse(JSON.stringify(this.current));
+        this.demoTemplate = createDemoGame(this.current);
+        this.demo = JSON.parse(JSON.stringify(this.demoTemplate));
         this.demoStarted = performance.now();
         this.demoNext = 0;
         this.demoFinished = null;
@@ -221,7 +224,7 @@ export class Final extends Phaser.Scene {
             if (this.demo.result !== null) {
                 if (this.demoFinished === null) this.demoFinished = now;
                 if (now - this.demoFinished > 1100) {
-                    this.demo = JSON.parse(JSON.stringify(this.current));
+                    this.demo = JSON.parse(JSON.stringify(this.demoTemplate));
                     this.demoStarted = now; this.demoNext = 0; this.demoFinished = null; this.motion = {};
                 }
             } else {

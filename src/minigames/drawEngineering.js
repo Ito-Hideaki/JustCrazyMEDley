@@ -85,8 +85,8 @@ export function drawMicrogame(scene, s) {
             } else {
                 for (const obstacle of s.obstacles) {
                     const until = obstacle.at - s.elapsed;
-                    if (until >= 0 && until <= 1.4) {
-                        const x = 250 + obstacle.lane * 135, y = 500 - until / 1.4 * 220;
+                    if (until >= 0 && until <= s.obstacleTravel) {
+                        const x = 250 + obstacle.lane * 135, y = 500 - until / s.obstacleTravel * 220;
                         box(x, y, 70, 48, 0xdd6179);
                         for(let leg=-1;leg<=1;leg++) { line(x-35,y+leg*12,x-46,y+leg*15+Math.sin(clock*15)*4,0xdd6179,4); line(x+35,y+leg*12,x+46,y+leg*15-Math.sin(clock*15)*4,0xdd6179,4); }
                         ink(x, y, 'BUG', 20);
@@ -122,10 +122,10 @@ export function drawMicrogame(scene, s) {
             break;
         }
         case 'phase': {
-            box(520, 414, 710, 68, 0x315947);
+            box(520, 414, 710, 180 * s.phaseWindow, 0x315947);
             line(165, 414, 875, 414, 0x8ae3b1, 2);
             for (let i = 1; i <= 140; i++) {
-                const shift = s.elapsed * (2.2 + s.tier * 0.15) + Math.PI / 2;
+                const shift = s.elapsed * (2.2 + s.tier * 0.15) * (s.motionScale ?? 1) + (s.phaseOffset ?? Math.PI / 2);
                 const a = (i - 1) / 140 * Math.PI * 4 + shift, b = i / 140 * Math.PI * 4 + shift;
                 line(170 + (i - 1) * 5, 414 - Math.sin(a) * 90, 170 + i * 5, 414 - Math.sin(b) * 90, 0x78c9ed, 3);
             }

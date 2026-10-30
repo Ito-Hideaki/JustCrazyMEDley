@@ -1,4 +1,25 @@
 // Pure microgame rules, separated from Phaser rendering for deterministic checks.
+export const FINAL_REQUIRED = 150;
+export const FINAL_MAX_TANGYE = 200;
+
+export function getFinalDifficulty(saveData) {
+    // Read the five department records, not the separately encoded total counter.
+    const total = Array.from({ length: 5 }, (_, i) => {
+        const count = saveData?.stages?.[i];
+        return Number.isFinite(count) ? Math.max(0, Math.min(40, count)) : 0;
+    }).reduce((sum, count) => sum + count, 0);
+    const challenge = Math.max(0, Math.min(1, (FINAL_MAX_TANGYE - total) / (FINAL_MAX_TANGYE - FINAL_REQUIRED)));
+    return {
+        total,
+        challenge,
+        durationScale: 1.45 - 0.55 * challenge,
+        motionScale: 0.7 + 0.45 * challenge,
+        timingScale: 1.4 - 0.4 * challenge,
+        sequenceExtra: Math.floor(challenge * 3),
+        label: challenge === 1 ? '最高' : challenge === 0 ? '最低' : challenge >= 2/3 ? '高め' : challenge <= 1/3 ? '低め' : '標準'
+    };
+}
+
 export const DEPARTMENTS = [
     { name: '機械工学科', short: '機械', character: 'M', color: 0xffb45c },
     { name: '電気工学科', short: '電気', character: 'E', color: 0xffdf62 },
@@ -39,14 +60,16 @@ export function makeDeck(rng = Math.random) {
     const pools = DEPARTMENTS.map((_, dept) => shuffle(GAMES.filter(game => game.dept === dept), rng));
     return [0, 1, 2].flatMap(tier => shuffle([0, 1, 2, 3, 4], rng).map(dept => pools[dept][tier].id));
 }
-export function createGame(id, tier = 0, rng = Math.random) {
+export function createGame(id, tier = 0, rng = Math.random, difficulty = null) {
     const definition = GAMES.find(game => game.id === id);
     if (!definition) throw new Error(`Unknown microgame: ${id}`);
-    const s = { ...definition, tier, duration: definition.duration + 3 - tier * 0.2, elapsed: 0, result: null, cursor: 0, count: 0, mistakes: 0, feedback: '' };
+    const motionScale = difficulty?.motionScale ?? 1;
+    const timingScale = difficulty?.timingScale ?? 1;
+    const s = { ...definition, tier, difficulty, motionScale, phaseWindow: 0.38 * timingScale, duration: (definition.duration + 3 - tier * 0.2) * (difficulty?.durationScale ?? 1), elapsed: 0, result: null, cursor: 0, count: 0, mistakes: 0, feedback: '' };
     switch (id) {
-        case 'bolt': s.sequence = Array.from({ length: 4 + tier }, (_, i) => ARROWS[i % 4]); break;
-        case 'catch': s.cursor = 2; s.target = int(rng, 5); s.impact = 4.3 - tier * 0.15; break;
-        case 'lathe': s.target = 0.35 + rng() * 0.3; s.width = 0.16 - tier * 0.01; break;
+        case 'bolt': s.sequence = Array.from({ length: 4 + tier + (difficulty?.sequenceExtra ?? 0) }, (_, i) => ARROWS[i % 4]); break;
+        case 'catch': s.cursor = 2; s.target = int(rng, 5); s.impact = (4.3 - tier * 0.15) / motionScale; break;
+        case 'lathe': s.target = 0.35 + rng() * 0.3; s.width = (0.16 - tier * 0.01) * timingScale; break;
         case 'wire': s.x = 0; s.y = 1; s.path = [[0, 1]]; s.blocks = [[2, 1], [1, 2]]; break;
         case 'voltage': s.value = 0; s.target = 3 + int(rng, 6); break;
         case 'phase': break;
@@ -63,17 +86,62 @@ export function createGame(id, tier = 0, rng = Math.random) {
             break;
         }
         case 'sort': s.values = shuffle([1, 2, 3, 4], rng); if (s.values.every((v, i) => v === i + 1)) s.values.reverse(); break;
-        case 'packet': s.cursor = 2; s.obstacles = [2, 3.5, 5, 6.5].map(at => ({ at, lane: int(rng, 5), passed: false })); break;
+        case 'packet':
+            s.cursor = 2;
+            s.obstacleTravel = 1.4 / motionScale;
+            s.surviveUntil = 7 / motionScale;
+            s.obstacles = [2, 3.5, 5, 6.5].map(at => ({ at: at / motionScale, lane: int(rng, 5), passed: false }));
+            break;
         case 'titrate': s.target = 4 + int(rng, 4); break;
-        case 'mix': s.sequence = Array.from({ length: 4 + tier }, () => ARROWS[int(rng, 4)]); break;
+        case 'mix': s.sequence = Array.from({ length: 4 + tier + (difficulty?.sequenceExtra ?? 0) }, () => ARROWS[int(rng, 4)]); break;
         case 'scope': s.x = 2; s.y = 1; s.target = [int(rng, 5), int(rng, 3)]; if (s.target[0] === 2 && s.target[1] === 1) s.target[0] = 4; break;
     }
     return s;
 }
 export function gaugePosition(s) {
-    return (Math.sin(s.elapsed * (1.9 + s.tier * 0.15) - Math.PI / 2) + 1) / 2;
+    return (Math.sin(s.elapsed * (1.9 + s.tier * 0.15) * (s.motionScale ?? 1) - Math.PI / 2) + 1) / 2;
 }
-export function phasePosition(s) { return Math.sin(s.elapsed * (2.2 + s.tier * 0.15) + Math.PI / 2); }
+export function phasePosition(s) { return Math.sin(s.elapsed * (2.2 + s.tier * 0.15) * (s.motionScale ?? 1) + (s.phaseOffset ?? Math.PI / 2)); }
+
+// Teach the same controls with a separate puzzle; never reveal the live round.
+export function createDemoGame(current) {
+    const demo = createGame(current.id, current.tier, Math.random, current.difficulty);
+    switch (current.id) {
+        case 'bolt': case 'mix':
+            demo.sequence = current.sequence.map(key => ARROWS[(ARROWS.indexOf(key) + 1) % 4]);
+            break;
+        case 'catch': demo.target = current.target === 0 ? 4 : 0; break;
+        case 'lathe': demo.target = 0.18; break;
+        case 'wire':
+            demo.blocks = current.blocks.map(([x,y]) => [x, 2-y]);
+            demo.routeY = 2;
+            break;
+        case 'voltage': demo.target = current.target === 3 ? 5 : 3; break;
+        case 'phase': demo.phaseOffset = 0; break;
+        case 'solder': demo.targets = current.targets.map(([x,y]) => [(x+1)%3,y]); break;
+        case 'polarity': demo.target = 1-current.target; demo.cursor = 1-demo.target; break;
+        case 'logic':
+            demo.gate = current.gate;
+            demo.a = logicAnswer(current) ? 0 : 1;
+            demo.b = logicAnswer(current) || demo.gate === 'XOR' ? 0 : 1;
+            break;
+        case 'debug':
+            return createGame('debug', current.tier, () => ((current.target+1)%3+0.5)/3, current.difficulty);
+        case 'sort':
+            demo.values = current.values.join() === '2,1,3,4' ? [1,3,2,4] : [2,1,3,4];
+            break;
+        case 'packet':
+            demo.cursor = 0;
+            demo.obstacles.forEach((obstacle,i) => { obstacle.lane = i; });
+            break;
+        case 'titrate': demo.target = current.target === 4 ? 6 : 4; break;
+        case 'scope':
+            demo.target = [(current.target[0]+1)%5,current.target[1]];
+            if (demo.target[0] === 2 && demo.target[1] === 1) demo.target[0] = 3;
+            break;
+    }
+    return demo;
+}
 export function logicAnswer(s) { return s.gate === 'AND' ? s.a & s.b : s.gate === 'OR' ? s.a | s.b : s.a ^ s.b; }
 export function advanceGame(s, elapsed) {
     if (s.result !== null) return;
@@ -86,7 +154,7 @@ export function advanceGame(s, elapsed) {
                 if (s.cursor === obstacle.lane) s.result = false;
             }
         }
-        if (s.result === null && elapsed >= 7) s.result = true;
+        if (s.result === null && elapsed >= s.surviveUntil) s.result = true;
     }
     if (s.result === null && elapsed >= s.duration) s.result = false;
 }
@@ -106,7 +174,7 @@ export function pressGame(s, key, elapsed = s.elapsed) {
             break;
         case 'catch': case 'packet': s.cursor = clamp(s.cursor + dx, 0, 4); break;
         case 'lathe': if (key === 'Space') check(Math.abs(gaugePosition(s) - s.target) <= s.width, 'もう一度！ 黄色の針が緑に来たら押そう'); break;
-        case 'phase': if (key === 'Space') check(Math.abs(phasePosition(s)) <= 0.38, '黄色い丸が緑の帯に来たら押そう'); break;
+        case 'phase': if (key === 'Space') check(Math.abs(phasePosition(s)) <= s.phaseWindow, '黄色い丸が緑の帯に来たら押そう'); break;
         case 'wire':
             if (!dx && !dy) return;
             {
@@ -218,8 +286,11 @@ export function demoKey(s) {
         case 'bolt': case 'mix': return s.sequence[s.count];
         case 'catch': return s.cursor === s.target ? null : s.cursor < s.target ? 'ArrowRight' : 'ArrowLeft';
         case 'lathe': return Math.abs(gaugePosition(s)-s.target) <= s.width ? 'Space' : null;
-        case 'phase': return Math.abs(phasePosition(s)) <= 0.38 ? 'Space' : null;
-        case 'wire': return s.x === 4 ? 'ArrowDown' : s.y > 0 ? 'ArrowUp' : 'ArrowRight';
+        case 'phase': return Math.abs(phasePosition(s)) <= s.phaseWindow ? 'Space' : null;
+        case 'wire': {
+            const routeY = s.routeY ?? 0;
+            return s.x === 4 ? (s.y < 1 ? 'ArrowDown' : 'ArrowUp') : s.y !== routeY ? (s.y < routeY ? 'ArrowDown' : 'ArrowUp') : 'ArrowRight';
+        }
         case 'voltage': return s.value === s.target ? 'Space' : s.value < s.target ? 'ArrowUp' : 'ArrowDown';
         case 'solder': return toward(...s.targets[s.count]);
         case 'scope': return toward(...s.target);
