@@ -209,7 +209,7 @@ export class Chemical extends Phaser.Scene {
         this.timeText.setText(`Time: ${this.elapsedSeconds.toFixed(1)}`);
         this.updateStarInvincibleText();
         this.run(deltaSeconds);
-        this.resolveWallCollisions(previousCharacterX);
+        this.resolveHorizontalBlockCollisions(previousCharacterX);
         if (this.characterStand.x > this.worldWidth) {
             this.leaveStage();
         }
@@ -277,6 +277,7 @@ export class Chemical extends Phaser.Scene {
                 this.isGrounded = true;
             }
         }
+        this.resolveHorizontalBlockCollisions(previousCharacterX);
 
         // 地面への着地（落とし穴の上では着地しない）
         const isOverPit = this.pits.some(pit => this.characterStand.x > pit.left && this.characterStand.x < pit.right);
@@ -670,14 +671,18 @@ export class Chemical extends Phaser.Scene {
             this.placeHiddenBlock(x, y, blockCount));
     }
 
-    resolveWallCollisions(previousX) {
+    resolveHorizontalBlockCollisions(previousX) {
         const deltaX = this.characterStand.x - previousX;
         if (deltaX === 0) {
             return;
         }
 
         const playerBounds = this.characterStand.getBounds();
-        for (const block of this.wallGroup.getChildren()) {
+        const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
+        for (const block of solidBlocks) {
+            if (block.getData('hiddenBlock') && !block.getData('revealed')) {
+                continue;
+            }
             const blockBounds = block.getBounds();
             const overlapsY = playerBounds.bottom > blockBounds.top && playerBounds.top < blockBounds.bottom;
             if (!overlapsY) {
@@ -1262,7 +1267,7 @@ export class Chemical extends Phaser.Scene {
                 .setScrollFactor(0)
                 .setDepth(1000)
                 .setAlpha(0);
-            const fit = Math.min(width / img.width, height / img.height, 1);
+            const fit = Math.max(width / img.width, height / img.height);
             img.setScale(fit);
             this.tweens.add({
                 targets: img,
