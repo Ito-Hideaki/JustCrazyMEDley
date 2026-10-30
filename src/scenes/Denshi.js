@@ -1,4 +1,7 @@
 import { IS_SCENE_DEBUG, createEmptySaveData, encodeSaveData } from '../saveData.js';
+import { getGroundRespawnX, isPitInputBlocked, lockPitRespawnInput } from './pitRespawn.js';
+import { setupRunningSound } from './runningSound.js';
+import { setupStageBgm } from './stageBgm.js';
 
 export class Denshi extends Phaser.Scene {
 
@@ -7,6 +10,21 @@ export class Denshi extends Phaser.Scene {
     }
 
     preload() {
+        this.load.audio('specialBgm', 'assets/maou_bgm_8bit29.mp3');
+        this.load.audio('itemStomp', 'assets/決定ボタンを押す50.mp3');
+        this.load.audio('gradeStomp', 'assets/決定ボタンを押す33.mp3');
+        this.load.audio('stageBgm', 'assets/魔王魂 ループ  8bit05.mp3');
+        this.load.audio('jumpTakeoff', 'assets/キャンセル9.mp3');
+        this.load.audio('jumpLand', 'assets/ジャンプの着地.mp3');
+        this.load.audio('jumpAir', 'assets/ちょこっと触る.mp3');
+        this.load.audio('blockHit', 'assets/決定ボタンを押す44.mp3');
+        this.load.audio('running', 'assets/アスファルトの上を走る1.mp3');
+        this.load.audio('tangyeCollect', 'assets/決定ボタンを押す35.mp3');
+        this.load.audio('akatenHit', 'assets/ガラスにひびが入る.mp3');
+        this.load.audio('aotenHit', 'assets/石が砕ける.mp3');
+        this.load.audio('reportHit', 'assets/ビープ音4.mp3');
+        this.load.audio('enadoriHit', 'assets/缶を開ける.mp3');
+        this.load.audio('condenserExplosion', 'assets/マッチの火を吹き消す.mp3');
         this.load.image('background', 'assets/back1.png');//背景
         this.load.image('ground1', 'assets/ground1.png');//地面
         this.load.image('DenshicharacterStand', 'assets/D-stand.png');//J（主人公）
@@ -33,6 +51,7 @@ export class Denshi extends Phaser.Scene {
         this.isLeaving = false;//ステージの右端から出ていく最中かどうか
         this.isGameOver = false;
         this.isDamageShowing = false;
+        this.isDamageKnockback = false;
         this.isInvulnerable = false;
         this.isStarInvincible = false;//踏みつけ回数による無敵モード中かどうか
         this.stompCount = 0;//上から踏みつけて無害にした回数
@@ -42,6 +61,7 @@ export class Denshi extends Phaser.Scene {
         this.starGlow = null;
         this.isPitRespawnProtected = false;
         this.pitRespawnProtectionTimer = null;
+        this.mustReleasePitKeys = false;
         this.mustReleaseMovementKeys = false;
         this.damageTextureTimer = null;
         // 背景と地面
@@ -172,8 +192,11 @@ export class Denshi extends Phaser.Scene {
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);//スペースキーの挙動を監視
         this.characterStandVelocityY = 0;//J（主人公）のY軸速度
         this.isGrounded = true;//J（主人公）が地面にいるかどうか
-        this.coyoteTime = 0.3;//地面から離れた後もジャンプできる猶予（秒）
-        this.coyoteTimeRemaining = this.coyoteTime;
+        setupRunningSound(this);
+        setupStageBgm(this);
+        this.coyoteDistance = this.textures.get('block').getSourceImage().height / 2;
+        this.coyoteGroundY = this.characterStand.y;
+        this.coyoteJumpAvailable = true;
 
         // カメラ
         const cam = this.cameras.main;
@@ -211,26 +234,33 @@ export class Denshi extends Phaser.Scene {
             this.leaveStage();
         }
 
-        // ジャンプ入力（地面・空中ブロック・隠しブロックから離れた後も一定時間はジャンプできる）
+        // ジャンプ入力（地面、または足場からの落下距離がブロック半分以内ならジャンプできる）
         if (this.isGrounded) {
-            this.coyoteTimeRemaining = this.coyoteTime;
+            this.coyoteGroundY = this.characterStand.y;
+            this.coyoteJumpAvailable = true;
         } else if (this.characterStandVelocityY < 0) {
-            this.coyoteTimeRemaining = 0;//ジャンプ・踏みつけ・ダメージで上昇中は猶予なし
+            this.coyoteJumpAvailable = false;//ジャンプ・踏みつけ・ダメージで上昇中は猶予なし
         } else {
-            this.coyoteTimeRemaining = Math.max(this.coyoteTimeRemaining - deltaSeconds, 0);
+            if (this.characterStand.y - this.coyoteGroundY > this.coyoteDistance) {
+                this.coyoteJumpAvailable = false;
+            }
         }
-        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-            if (this.coyoteTimeRemaining > 0) {//スペースキーが押され、かつ地面にいるか離れてから猶予時間内の場合
+        const wasGrounded = this.isGrounded;
+        if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && !isPitInputBlocked(this)) {
+            if (this.coyoteJumpAvailable) {//地面にいるか、許容距離内で足場から落ちた場合
                 this.characterStandVelocityY = -this.jumpSpeed;//ジャンプ速度を設定
+                this.sound.play('jumpTakeoff');
+                this.isDamageKnockback = false;
+                this.sound.play('jumpAir');
                 this.isGrounded = false;//地面から離れたことを示す
-                this.coyoteTimeRemaining = 0;
+                this.coyoteJumpAvailable = false;
             }
         }
         this.isGrounded = false;
 
         // Y方向の移動と空中オブジェクトとの判定
         this.previousCharacterY = this.characterStand.y;
-        const headTopY = this.characterStand.y - this.playerHalfHeight;//キャラクターの頭頂のY座標
+        const previousHeadTopY = this.previousCharacterY - this.playerHalfHeight;
 
         this.characterStandVelocityY += this.gravity * deltaSeconds;//重力を適用
         this.characterStand.y += this.characterStandVelocityY * deltaSeconds;//Y軸の位置を更新
@@ -245,17 +275,20 @@ export class Denshi extends Phaser.Scene {
             const isCollidingWithPlatform = this.isHitFromAbove(platform);
 
             const isCollidingWithHead =
-                this.characterStandVelocityY < 0 &&
-                headTopY >= platformBounds.bottom &&
+                this.characterStand.y < this.previousCharacterY &&
+                previousHeadTopY >= platformBounds.bottom &&
                 this.characterStand.y - this.playerHalfHeight <= platformBounds.bottom &&
                 overlapsX;
 
             if (isCollidingWithHead) {
+                this.sound.stopByKey('jumpAir');
+                this.sound.play('blockHit');
                 this.characterStand.y = platformBounds.bottom + this.playerHalfHeight;
                 this.characterStandVelocityY = 0;
             }
 
             if (isCollidingWithPlatform) {
+                this.sound.stopByKey('jumpAir');
                 this.characterStand.y = platformBounds.top - this.playerHalfHeight;
                 this.characterStandVelocityY = 0;
                 this.isGrounded = true;
@@ -271,6 +304,11 @@ export class Denshi extends Phaser.Scene {
             this.isGrounded = true;//地面にいることを示す
         }
 
+        if (!wasGrounded && this.isGrounded) {
+            this.isDamageKnockback = false;
+            this.sound.stopByKey('jumpAir');
+            this.sound.play('jumpLand');
+        }
         this.updateMovers(deltaSeconds);
         this.updateEnadori(deltaSeconds);
         this.resolveItemCollisions();
@@ -291,12 +329,14 @@ export class Denshi extends Phaser.Scene {
                 return;
             }
             if (isTouching) {//J（主人公）とタン・イーが衝突した場合
+                this.sound.stopByKey('jumpAir');
                 if (tangye.getData('moving')) {//動くタン・イーに当たった
                     this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
                 } else if (this.isHitFromAbove(tangye)) {
                     this.characterStandVelocityY = -this.jumpSpeed;//落下中に上から踏んだら跳ね上がる
                 }
                 this.runTangyeCount += 1;
+                this.sound.play('tangyeCollect');
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
                 this.tangyeCount = this.runTangyeCount;
                 this.updateTangyeCountDisplay();
@@ -308,7 +348,9 @@ export class Denshi extends Phaser.Scene {
         const playerGetDamage = this.characterStand.getBounds();
         this.AkatenGroup.getChildren().slice().forEach(akaten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, akaten.getBounds())) {//J（主人公）とアカテンが衝突した場合
-                if (akaten.getData('moving') && this.isHitFromAbove(akaten, true)) {
+                if (akaten.getData('moving') && !this.isDamageKnockback && this.isHitFromAbove(akaten, true)) {
+                    this.sound.stopByKey('jumpAir');
+                    this.sound.play('gradeStomp');
                     akaten.setTexture('tangye');
                     akaten.setScale(0.2);
                     akaten.setData('moving', false);
@@ -323,8 +365,10 @@ export class Denshi extends Phaser.Scene {
                         this.updateLifeDisplay();
                     }
                 }else if (akaten.getData('moving')) {//動くアカテンに当たった
+                    this.sound.stopByKey('jumpAir');
                     if (!this.isDamageImmune()) {
                         this.showDamageCause('akaten', akaten);
+                        this.sound.play('akatenHit');
                         this.getDamage(0);
                     }
                 }
@@ -333,7 +377,9 @@ export class Denshi extends Phaser.Scene {
 
         this.AotenGroup.getChildren().slice().forEach(aoten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, aoten.getBounds())) {//J（主人公）とアオテンが衝突した場合
-                if (aoten.getData('moving') && this.isHitFromAbove(aoten, true)) {
+                if (aoten.getData('moving') && !this.isDamageKnockback && this.isHitFromAbove(aoten, true)) {
+                    this.sound.stopByKey('jumpAir');
+                    this.sound.play('gradeStomp');
                     aoten.setTexture('tangye');
                     aoten.setScale(0.2);
                     aoten.setData('moving', false);
@@ -348,8 +394,10 @@ export class Denshi extends Phaser.Scene {
                         this.updateLifeDisplay();
                     }
                 }else if (aoten.getData('moving')) {//動くアオテンに当たった
-                    if (!this.isStarInvincible) {
+                    this.sound.stopByKey('jumpAir');
+                    if (!this.isDamageImmune()) {
                         this.showDamageCause('aoten', aoten);
+                        this.sound.play('aotenHit');
                         this.getAoten();
                     }
                 }
@@ -376,13 +424,16 @@ export class Denshi extends Phaser.Scene {
         if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, target.getBounds())) {
             return;
         }
+        this.sound.stopByKey('jumpAir');
         if (this.isHitFromAbove(target, true)) {
+            this.sound.play('itemStomp');
             target.destroy();
             this.registerStomp();
             this.characterStandVelocityY = -this.jumpSpeed;
         } else {
             const effectTexture = target.getData('damageEffectTexture');
             if (effectTexture) {
+                this.sound.play('condenserExplosion');
                 if (!this.isDamageImmune()) {
                     this.showDamageCause(kind, target);
                     this.getDamage(0);
@@ -402,6 +453,11 @@ export class Denshi extends Phaser.Scene {
                 });
             } else if (!this.isDamageImmune()) {
                 this.showDamageCause(kind, target);
+                if (kind === 'report') {
+                    this.sound.play('reportHit');
+                } else if (kind === 'enadori') {
+                    this.sound.play('enadoriHit');
+                }
                 this.getDamage(0);
                 target.destroy();
             }
@@ -411,7 +467,7 @@ export class Denshi extends Phaser.Scene {
     // ダメージを受けたときに画面上部へ出すメッセージ。オブジェクトの種類ごとに自由に書き換えられる
     damageMessages = {
         akaten: '赤点を取ってしまった...',
-        aoten: '青点... 再試なし...',
+        aoten: '青点... ライフが2減った...',
         report: '理不尽レポートを喰らった',
         enadori: 'カフェインの過剰摂取！寝なさい！',
         departmentDamage: '過電圧を加えてしまった！コンデンサ爆発！',
@@ -429,6 +485,10 @@ export class Denshi extends Phaser.Scene {
     }
 
     run(deltaSeconds) {
+        if (isPitInputBlocked(this)) {
+            this.characterStand.anims.stop();
+            return;
+        }
         if (this.isDamageShowing) {
             return;
         }
@@ -607,14 +667,16 @@ export class Denshi extends Phaser.Scene {
                 continue;
             }
 
-            if (deltaX > 0 && previousX + this.characterStand.displayWidth / 2 <= blockBounds.left &&
-                playerBounds.right >= blockBounds.left) {
-                this.characterStand.x = blockBounds.left - this.characterStand.displayWidth / 2;
+            if (deltaX > 0 && previousX < blockBounds.right &&
+                playerBounds.right > blockBounds.left) {
+                this.characterStand.x = blockBounds.left - playerBounds.width / 2;
+                this.sound.stopByKey('jumpAir');
                 return;
             }
-            if (deltaX < 0 && previousX - this.characterStand.displayWidth / 2 >= blockBounds.right &&
-                playerBounds.left <= blockBounds.right) {
-                this.characterStand.x = blockBounds.right + this.characterStand.displayWidth / 2;
+            if (deltaX < 0 && previousX > blockBounds.left &&
+                playerBounds.left < blockBounds.right) {
+                this.characterStand.x = blockBounds.right + playerBounds.width / 2;
+                this.sound.stopByKey('jumpAir');
                 return;
             }
         }
@@ -864,14 +926,16 @@ export class Denshi extends Phaser.Scene {
     // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
     placeAllDepartmentDamage() {
         const items = [
-            [3500, this.groundY - 25, 120, '過電圧を加えてしまった！コンデンサ爆発！'],
+            [3500, this.groundY - 25, 120],
+            ...[850, 1550, 2850, 4150, 4850, 5650, 6850, 7700, 11150, 12700]
+                .map(x => [x, this.groundY - 27.5, 60]),
         ];
-        items.forEach(([centerX, y, range, damageMessage]) => {
+        items.forEach(([centerX, y, range]) => {
             const item = this.add.image(centerX - range, y, 'DenshiDamageItem');
             const image = this.textures.get('DenshiDamageItem').getSourceImage();
             item.setScale(Math.min(70 / image.width, 55 / image.height));
             item.setData('moving', true);
-            item.setData('damageMessage', damageMessage);
+            item.setData('damageMessage', '過電圧を加えてしまった！コンデンサ爆発！');
             item.setData('damageEffectTexture', 'DenshiDamageExplosion');
             item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
             this.departmentDamageGroup.add(item);
@@ -1023,9 +1087,9 @@ export class Denshi extends Phaser.Scene {
     // 落とし穴に落ちた：ライフを1減らし、直前の地面に戻る（ステージの最初には戻らない）
     fallIntoPit() {
         this.getDamage(1);
-        const pit = this.pits.find(p => this.characterStand.x > p.left - this.characterStand.displayWidth && this.characterStand.x < p.right + this.characterStand.displayWidth);
-        const respawnX = pit ? pit.left - 150 : this.characterStand.x;
-        this.characterStand.x = Math.max(respawnX, this.characterStand.displayWidth / 2);
+        lockPitRespawnInput(this);
+        this.isDamageKnockback = false;
+        this.characterStand.x = getGroundRespawnX(this.pits, this.characterStand.x, this.characterStand.displayWidth / 2);
         this.characterStand.y = this.characterStandBaseY;
         this.characterStandVelocityY = 0;
         this.isGrounded = true;
@@ -1097,19 +1161,20 @@ export class Denshi extends Phaser.Scene {
     }
 
     isDamageImmune() {
-        return this.isInvulnerable || this.isStarInvincible;
+        return this.isInvulnerable || this.isStarInvincible || this.isPitRespawnProtected;
     }
 
-    getDamage(from){
+    getDamage(from, amount = 1){
         if (from === 0 && this.isDamageImmune()) {
             return;
         }
 
-        this.life = Math.max(this.life -1 ,0 );
+        this.life = Math.max(this.life - amount, 0);
         this.updateLifeDisplay();
         if ((this.life > 0 || IS_SCENE_DEBUG) && from === 0) {
             this.isInvulnerable = true;
             this.isDamageShowing = true;
+            this.isDamageKnockback = true;
             this.mustReleaseMovementKeys = true;
             this.characterStand.anims.stop();
             this.characterStandVelocityY = -800;
@@ -1150,8 +1215,7 @@ export class Denshi extends Phaser.Scene {
     }
 
     getAoten(){
-        this.gameOver(0);
-        return;
+        this.getDamage(0, 2);
     }
 
     // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る

@@ -1,12 +1,31 @@
 import { IS_SCENE_DEBUG, createEmptySaveData, encodeSaveData } from '../saveData.js';
+import { findHazardSpawnX } from './hazardSpawn.js';
+import { getGroundRespawnX, isPitInputBlocked, lockPitRespawnInput } from './pitRespawn.js';
+import { setupRunningSound } from './runningSound.js';
+import { setupStageBgm } from './stageBgm.js';
 
 export class Electrical extends Phaser.Scene {
 
-    constructor() {
-        super('Electrical');
+    constructor(sceneKey = 'Electrical') {
+        super(sceneKey);
     }
 
     preload() {
+        this.load.audio('specialBgm', 'assets/maou_bgm_8bit29.mp3');
+        this.load.audio('itemStomp', 'assets/決定ボタンを押す50.mp3');
+        this.load.audio('gradeStomp', 'assets/決定ボタンを押す33.mp3');
+        this.load.audio('stageBgm', 'assets/魔王魂 ループ  8bit05.mp3');
+        this.load.audio('jumpTakeoff', 'assets/キャンセル9.mp3');
+        this.load.audio('jumpLand', 'assets/ジャンプの着地.mp3');
+        this.load.audio('jumpAir', 'assets/ちょこっと触る.mp3');
+        this.load.audio('blockHit', 'assets/決定ボタンを押す44.mp3');
+        this.load.audio('running', 'assets/アスファルトの上を走る1.mp3');
+        this.load.audio('tangyeCollect', 'assets/決定ボタンを押す35.mp3');
+        this.load.audio('akatenHit', 'assets/ガラスにひびが入る.mp3');
+        this.load.audio('aotenHit', 'assets/石が砕ける.mp3');
+        this.load.audio('reportHit', 'assets/ビープ音4.mp3');
+        this.load.audio('enadoriHit', 'assets/缶を開ける.mp3');
+        this.load.audio('electricalHit', 'assets/電気バチバチ.mp3');
         this.load.image('background', 'assets/back1.png');//背景
         this.load.image('ground1', 'assets/ground1.png');//地面（チョコ）
         this.load.image('ElectricalcharacterStand', 'assets/E-stand.png');//J（主人公）
@@ -32,6 +51,7 @@ export class Electrical extends Phaser.Scene {
         this.isLeaving = false;//ステージの右端から出ていく最中かどうか
         this.isGameOver = false;
         this.isDamageShowing = false;
+        this.isDamageKnockback = false;
         this.isInvulnerable = false;
         this.isStarInvincible = false;//踏みつけ回数による無敵モード中かどうか
         this.stompCount = 0;//上から踏みつけて無害にした回数
@@ -41,6 +61,7 @@ export class Electrical extends Phaser.Scene {
         this.starGlow = null;
         this.isPitRespawnProtected = false;
         this.pitRespawnProtectionTimer = null;
+        this.mustReleasePitKeys = false;
         this.mustReleaseMovementKeys = false;
         this.damageTextureTimer = null;
         // 背景と地面
@@ -177,6 +198,8 @@ export class Electrical extends Phaser.Scene {
         this.hiddenBlockHintRange = 300;//隠しブロックが半透明で見え始める距離（px）
         this.hiddenBlockHintAlpha = 0.5;//見え始めた隠しブロックの透明度
         this.coyoteTimeRemaining = this.coyoteTime;
+        setupRunningSound(this);
+        setupStageBgm(this);
 
         // カメラ
         const cam = this.cameras.main;
@@ -205,11 +228,12 @@ export class Electrical extends Phaser.Scene {
             return;
         }
         const previousCharacterX = this.previousCharacterX;
+        const previousCharacterY = this.characterStand.y;
         this.elapsedSeconds += deltaSeconds;
         this.timeText.setText(`Time: ${this.elapsedSeconds.toFixed(1)}`);
         this.updateStarInvincibleText();
         this.run(deltaSeconds);
-        this.resolveHorizontalBlockCollisions(previousCharacterX);
+        this.resolveHorizontalBlockCollisions(previousCharacterX, previousCharacterY);
         if (this.characterStand.x > this.worldWidth) {
             this.leaveStage();
         }
@@ -222,9 +246,16 @@ export class Electrical extends Phaser.Scene {
         } else {
             this.coyoteTimeRemaining = Math.max(this.coyoteTimeRemaining - deltaSeconds, 0);
         }
-        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+        const wasGrounded = this.isGrounded;
+        if (wasGrounded && this.characterStandVelocityY >= 0) {
+            this.isDamageKnockback = false;
+        }
+        if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && !isPitInputBlocked(this)) {
             if (this.coyoteTimeRemaining > 0) {//スペースキーが押され、かつ地面にいるか離れてから猶予時間内の場合
                 this.characterStandVelocityY = -this.jumpSpeed;//ジャンプ速度を設定
+                this.sound.play('jumpTakeoff');
+                this.isDamageKnockback = false;
+                this.sound.play('jumpAir');
                 this.isGrounded = false;//地面から離れたことを示す
                 this.coyoteTimeRemaining = 0;
             }
@@ -233,7 +264,7 @@ export class Electrical extends Phaser.Scene {
 
         // Y方向の移動と空中オブジェクトとの判定
         this.previousCharacterY = this.characterStand.y;
-        const headTopY = this.characterStand.y - this.playerHalfHeight;//キャラクターの頭頂のY座標
+        const previousHeadTopY = this.previousCharacterY - this.playerHalfHeight;
 
         this.characterStandVelocityY += this.gravity * deltaSeconds;//重力を適用
         this.characterStand.y += this.characterStandVelocityY * deltaSeconds;//Y軸の位置を更新
@@ -249,12 +280,14 @@ export class Electrical extends Phaser.Scene {
                 (!platform.getData('hiddenBlock') || platform.getData('revealed'));
 
             const isCollidingWithHead =
-                this.characterStandVelocityY < 0 &&
-                headTopY >= platformBounds.bottom &&
+                this.characterStand.y < this.previousCharacterY &&
+                previousHeadTopY >= platformBounds.bottom &&
                 this.characterStand.y - this.playerHalfHeight <= platformBounds.bottom &&
                 overlapsX;
 
             if (isCollidingWithHead) {
+                this.sound.stopByKey('jumpAir');
+                this.sound.play('blockHit');
                 this.characterStand.y = platformBounds.bottom + this.playerHalfHeight;
                 this.characterStandVelocityY = 0;
                 if (platform.getData('hiddenBlock') && !platform.getData('revealed')) {
@@ -272,12 +305,13 @@ export class Electrical extends Phaser.Scene {
             }
 
             if (isCollidingWithPlatform) {
+                this.sound.stopByKey('jumpAir');
                 this.characterStand.y = platformBounds.top - this.playerHalfHeight;
                 this.characterStandVelocityY = 0;
                 this.isGrounded = true;
             }
         }
-        this.resolveHorizontalBlockCollisions(previousCharacterX);
+        this.resolveHorizontalBlockCollisions(previousCharacterX, previousCharacterY);
 
         // 地面への着地（落とし穴の上では着地しない）
         const isOverPit = this.pits.some(pit => this.characterStand.x > pit.left && this.characterStand.x < pit.right);
@@ -288,6 +322,10 @@ export class Electrical extends Phaser.Scene {
         }
 
         this.updateHiddenBlockVisibility();
+        if (!wasGrounded && this.isGrounded) {
+            this.sound.stopByKey('jumpAir');
+            this.sound.play('jumpLand');
+        }
         this.updateMovers(deltaSeconds);
         this.updateEnadori(deltaSeconds);
         this.resolveItemCollisions();
@@ -308,12 +346,14 @@ export class Electrical extends Phaser.Scene {
                 return;
             }
             if (isTouching) {//J（主人公）とタン・イーが衝突した場合
+                this.sound.stopByKey('jumpAir');
                 if (tangye.getData('moving')) {//動くタン・イーに当たった
                     this.characterStandVelocityY = -this.jumpSpeed;//当たったら自動で跳ね上がる
                 } else if (this.characterStandVelocityY > 0 && this.characterStand.y + this.playerHalfHeight <= tangye.y) {
                     this.characterStandVelocityY = -this.jumpSpeed;//落下中に上から踏んだら跳ね上がる
                 }
                 this.runTangyeCount += 1;
+                this.sound.play('tangyeCollect');
                 tangye.destroy();//タン・イーを消す（グループからも自動で外れる）
                 this.tangyeCount = this.runTangyeCount;
                 this.updateTangyeCountDisplay();
@@ -325,7 +365,9 @@ export class Electrical extends Phaser.Scene {
         const playerGetDamage = this.characterStand.getBounds();
         this.AkatenGroup.getChildren().slice().forEach(akaten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, akaten.getBounds())) {//J（主人公）とアカテンが衝突した場合
-                if (akaten.getData('moving') && this.isHitFromAbove(akaten, true)) {
+                if (akaten.getData('moving') && !this.isDamageKnockback && this.isHitFromAbove(akaten, true)) {
+                    this.sound.stopByKey('jumpAir');
+                    this.sound.play('gradeStomp');
                     akaten.setTexture('tangye');
                     akaten.setScale(0.2);
                     akaten.setData('moving', false);
@@ -340,8 +382,10 @@ export class Electrical extends Phaser.Scene {
                         this.updateLifeDisplay();
                     }
                 }else if (akaten.getData('moving')) {//動くアカテンに当たった
+                    this.sound.stopByKey('jumpAir');
                     if (!this.isDamageImmune()) {
                         this.showDamageCause('akaten', akaten);
+                        this.sound.play('akatenHit');
                         this.getDamage(0);
                     }
                 }
@@ -350,7 +394,9 @@ export class Electrical extends Phaser.Scene {
 
         this.AotenGroup.getChildren().slice().forEach(aoten => {
             if (Phaser.Geom.Intersects.RectangleToRectangle(playerGetDamage, aoten.getBounds())) {//J（主人公）とアオテンが衝突した場合
-                if (aoten.getData('moving') && this.isHitFromAbove(aoten, true)) {
+                if (aoten.getData('moving') && !this.isDamageKnockback && this.isHitFromAbove(aoten, true)) {
+                    this.sound.stopByKey('jumpAir');
+                    this.sound.play('gradeStomp');
                     aoten.setTexture('tangye');
                     aoten.setScale(0.2);
                     aoten.setData('moving', false);
@@ -365,8 +411,10 @@ export class Electrical extends Phaser.Scene {
                         this.updateLifeDisplay();
                     }
                 }else if (aoten.getData('moving')) {//動くアオテンに当たった
-                    if (!this.isStarInvincible) {
+                    this.sound.stopByKey('jumpAir');
+                    if (!this.isDamageImmune()) {
                         this.showDamageCause('aoten', aoten);
+                        this.sound.play('aotenHit');
                         this.getAoten();
                     }
                 }
@@ -390,12 +438,21 @@ export class Electrical extends Phaser.Scene {
         if (!Phaser.Geom.Intersects.RectangleToRectangle(playerBounds, target.getBounds())) {
             return;
         }
+        this.sound.stopByKey('jumpAir');
         if (this.isHitFromAbove(target, true)) {
+            this.sound.play('itemStomp');
             target.destroy();
             this.registerStomp();
             this.characterStandVelocityY = -this.jumpSpeed * 1.2;
         } else if (!this.isDamageImmune()) {
             this.showDamageCause(kind, target);
+            if (kind === 'report') {
+                this.sound.play('reportHit');
+            } else if (kind === 'enadori') {
+                this.sound.play('enadoriHit');
+            } else if (kind === 'departmentDamage') {
+                this.sound.play('electricalHit', { name: 'shock', start: 0, duration: 0.5 });
+            }
             this.getDamage(0);
             target.destroy();
         }
@@ -404,10 +461,10 @@ export class Electrical extends Phaser.Scene {
     // ダメージを受けたときに画面上部へ出すメッセージ。オブジェクトの種類ごとに自由に書き換えられる
     damageMessages = {
         akaten: '赤点を取ってしまった...',
-        aoten: '青点... 再試なし...',
+        aoten: '青点... ライフが２減った...',
         report: '理不尽レポートを喰らった',
         enadori: 'カフェインの過剰摂取！寝なさい！',
-        departmentDamage: '電気工学科の専用アイテムにぶつかった！',
+        departmentDamage: '感電！交流１００Ⅴを喰らった',
     };
 
     // 画面上部に、ダメージを受けた相手のメッセージを一定時間表示する
@@ -422,6 +479,10 @@ export class Electrical extends Phaser.Scene {
     }
 
     run(deltaSeconds) {
+        if (isPitInputBlocked(this)) {
+            this.characterStand.anims.stop();
+            return;
+        }
         if (this.isDamageShowing) {
             return;
         }
@@ -651,35 +712,72 @@ export class Electrical extends Phaser.Scene {
             this.placeHiddenBlock(x, y, blockCount));
     }
 
-    resolveHorizontalBlockCollisions(previousX) {
+    resolveHorizontalBlockCollisions(previousX, previousY) {
         const deltaX = this.characterStand.x - previousX;
         if (deltaX === 0) {
             return;
         }
 
         const playerBounds = this.characterStand.getBounds();
+        const playerHalfWidth = playerBounds.width / 2;
+        const verticalOverlapAt = (fraction, blockBounds) => {
+            const y = previousY + (this.characterStand.y - previousY) * fraction;
+            return y + this.playerHalfHeight > blockBounds.top &&
+                y - this.playerHalfHeight < blockBounds.bottom;
+        };
+        let resolvedX = this.characterStand.x;
+        let nearestCollisionDistance = Infinity;
         const solidBlocks = [...this.platformGroup.getChildren(), ...this.wallGroup.getChildren()];
         for (const block of solidBlocks) {
             if (block.getData('hiddenBlock') && !block.getData('revealed')) {
                 continue;
             }
             const blockBounds = block.getBounds();
-            const overlapsY = playerBounds.bottom > blockBounds.top && playerBounds.top < blockBounds.bottom;
-            if (!overlapsY) {
-                continue;
+            const previousLeft = previousX - playerHalfWidth;
+            const previousRight = previousX + playerHalfWidth;
+            const overlapsX =
+                playerBounds.right > blockBounds.left &&
+                playerBounds.left < blockBounds.right;
+            const startedOverlappingX =
+                previousRight > blockBounds.left &&
+                previousLeft < blockBounds.right;
+            let collisionX = null;
+            if (deltaX > 0 && previousRight <= blockBounds.left &&
+                playerBounds.right > blockBounds.left) {
+                const fraction = (blockBounds.left - previousRight) / deltaX;
+                if (verticalOverlapAt(fraction, blockBounds)) {
+                    collisionX = blockBounds.left - playerHalfWidth;
+                }
+            } else if (deltaX < 0 && previousLeft >= blockBounds.right &&
+                playerBounds.left < blockBounds.right) {
+                const fraction = (blockBounds.right - previousLeft) / deltaX;
+                if (verticalOverlapAt(fraction, blockBounds)) {
+                    collisionX = blockBounds.right + playerHalfWidth;
+                }
+            } else if (overlapsX && startedOverlappingX) {
+                const overlapsY =
+                    playerBounds.bottom > blockBounds.top &&
+                    playerBounds.top < blockBounds.bottom;
+                if (!overlapsY) {
+                    continue;
+                }
+                const pushLeft = previousX - (blockBounds.left - playerHalfWidth);
+                const pushRight = blockBounds.right + playerHalfWidth - previousX;
+                collisionX = pushLeft < pushRight
+                    ? blockBounds.left - playerHalfWidth
+                    : blockBounds.right + playerHalfWidth;
             }
 
-            if (deltaX > 0 && previousX + this.characterStand.displayWidth / 2 <= blockBounds.left &&
-                playerBounds.right >= blockBounds.left) {
-                this.characterStand.x = blockBounds.left - this.characterStand.displayWidth / 2;
-                return;
-            }
-            if (deltaX < 0 && previousX - this.characterStand.displayWidth / 2 >= blockBounds.right &&
-                playerBounds.left <= blockBounds.right) {
-                this.characterStand.x = blockBounds.right + this.characterStand.displayWidth / 2;
-                return;
+            if (collisionX !== null) {
+                const collisionDistance = Math.abs(collisionX - previousX);
+                if (collisionDistance < nearestCollisionDistance) {
+                    nearestCollisionDistance = collisionDistance;
+                    resolvedX = collisionX;
+                }
             }
         }
+        if (this.characterStand.x !== resolvedX) this.sound.stopByKey('jumpAir');
+        this.characterStand.x = resolvedX;
     }
 
     // 赤点・青点・レポートを動かす。ブロックに当たると進む向きを反転する
@@ -810,7 +908,7 @@ export class Electrical extends Phaser.Scene {
             [2905, 280, 18, 4], [3815, 245, 34, 5], [4060, 35, 7, 6],
             [5250, this.groundY-420, 7, 12],
             [5775, 35, 5, 10], [5775, this.groundY-105, 5, 3],
-            [6125, 35, 6, 6], [6125, this.groundY-245, 6, 7],
+            [6125, 35, 6, 6], [6125, this.groundY-245, 6, 7],[6335,this.groundY-70,2,2],
             [6510, 35, 6, 2], [6510, this.groundY-385, 6, 11],
             [6895, 175, 5, 9],
             [7280, 35, 5, 10], [7280, this.groundY-105, 5, 3],
@@ -950,17 +1048,16 @@ export class Electrical extends Phaser.Scene {
         reports.forEach(([centerX, y, range]) => this.placeReport(centerX, y, range));
     }
 
-    // 学科専用damageアイテムの一覧。[中心x, y, 左右の移動幅]
+    // 学科専用damageアイテムの中心x一覧。底面を地面に合わせて固定配置する
     placeAllDepartmentDamage() {
-        const items = [
-        ];
-        items.forEach(([centerX, y, range, damageMessage]) => {
-            const item = this.add.image(centerX - range, y, 'ElectricalDamageItem');
-            const image = this.textures.get('ElectricalDamageItem').getSourceImage();
-            item.setScale(Math.min(70 / image.width, 55 / image.height));
+        const positions = [600, 1500, 2650, 3600, 5050, 5650, 6050, 7200, 8200, 9250, 11000];
+        const image = this.textures.get('ElectricalDamageItem').getSourceImage();
+        const scale = Math.min(140 / image.width, 110 / image.height);
+        const y = this.groundY - image.height * scale / 2;
+        positions.forEach(x => {
+            const item = this.add.image(x, y, 'ElectricalDamageItem');
+            item.setScale(scale);
             item.setData('moving', true);
-            item.setData('damageMessage', damageMessage);
-            item.setData('swing', { centerX, centerY: y, range, axis: 'horizontal', phase: 0, direction: 1 });
             this.departmentDamageGroup.add(item);
             this.itemPreviousPositions.set(item, { x: item.x, y: item.y });
         });
@@ -969,8 +1066,12 @@ export class Electrical extends Phaser.Scene {
     // エナドリを1個配置する。左へ転がり続け、ときどき跳ねる。x, yは判定用の箱の中心
     placeEnadori(x, y) {
         const hitSize = 40;//判定用の箱の大きさ（回転しても変わらない）
-        const body = this.add.rectangle(x, y, hitSize, hitSize).setVisible(false);
-        const sprite = this.add.image(x, y, 'enadori1').setScale(0.5);//見た目（元画像40×104）
+        const image = this.textures.get('enadori1').getSourceImage();
+        const clearance = Math.max(hitSize, Math.hypot(image.width, image.height) * 0.5);
+        const spawnX = findHazardSpawnX(this, x, y, clearance, clearance);
+        if (spawnX === null) return null;
+        const body = this.add.rectangle(spawnX, y, hitSize, hitSize).setVisible(false);
+        const sprite = this.add.image(spawnX, y, 'enadori1').setScale(0.5);//見た目（元画像40×104）
         body.setData('sprite', sprite);
         body.setData('direction', -1);//-1: 左へ進む
         body.setData('velocityY', 0);
@@ -1110,9 +1211,9 @@ export class Electrical extends Phaser.Scene {
     // 落とし穴に落ちた：ライフを1減らし、直前の地面に戻る（ステージの最初には戻らない）
     fallIntoPit() {
         this.getDamage(1);
-        const pit = this.pits.find(p => this.characterStand.x > p.left - this.characterStand.displayWidth && this.characterStand.x < p.right + this.characterStand.displayWidth);
-        const respawnX = pit ? pit.left - 150 : this.characterStand.x;
-        this.characterStand.x = Math.max(respawnX, this.characterStand.displayWidth / 2);
+        lockPitRespawnInput(this);
+        this.isDamageKnockback = false;
+        this.characterStand.x = getGroundRespawnX(this.pits, this.characterStand.x, this.characterStand.displayWidth / 2);
         this.characterStand.y = this.characterStandBaseY;
         this.characterStandVelocityY = 0;
         this.isGrounded = true;
@@ -1184,19 +1285,20 @@ export class Electrical extends Phaser.Scene {
     }
 
     isDamageImmune() {
-        return this.isInvulnerable || this.isStarInvincible;
+        return this.isInvulnerable || this.isStarInvincible || this.isPitRespawnProtected;
     }
 
-    getDamage(from){
+    getDamage(from, amount = 1){
         if (from === 0 && this.isDamageImmune()) {
             return;
         }
 
-        this.life = Math.max(this.life -1 ,0 );
+        this.life = Math.max(this.life - amount, 0);
         this.updateLifeDisplay();
         if ((this.life > 0 || IS_SCENE_DEBUG) && from === 0) {
             this.isInvulnerable = true;
             this.isDamageShowing = true;
+            this.isDamageKnockback = true;
             this.mustReleaseMovementKeys = true;
             this.characterStand.anims.stop();
             this.characterStandVelocityY = -800;
@@ -1237,8 +1339,7 @@ export class Electrical extends Phaser.Scene {
     }
 
     getAoten(){
-        this.gameOver(0);
-        return;
+        this.getDamage(0, 2);
     }
 
     // ライフ0：GAME OVERを表示し、暗転して選択画面へ戻る

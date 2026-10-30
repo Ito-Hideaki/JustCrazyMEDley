@@ -1,4 +1,5 @@
 import { createEmptySaveData, encodeSpell } from '../saveData.js';
+import { setupRunningSound } from './runningSound.js';
 
 export class Home extends Phaser.Scene {
 
@@ -11,6 +12,11 @@ export class Home extends Phaser.Scene {
     }
 
     preload() {
+        this.load.audio('running', 'assets/アスファルトの上を走る1.mp3');
+        this.load.audio('jumpTakeoff', 'assets/キャンセル9.mp3');
+        this.load.audio('jumpAir', 'assets/ちょこっと触る.mp3');
+        this.load.audio('jumpLand', 'assets/ジャンプの着地.mp3');
+        this.load.audio('blockHit', 'assets/決定ボタンを押す44.mp3');
         this.load.image('background', 'assets/back1.png');//背景
         this.load.image('ground1', 'assets/ground1.png');//地面
         this.load.image('characterStand', 'assets/J-stand.png');//J（主人公）
@@ -122,6 +128,7 @@ export class Home extends Phaser.Scene {
         }).setOrigin(0.5);
 
         this.isLeaving = false;
+        setupRunningSound(this, this.character, () => this.velocityY);
     }
 
     update(time, delta) {
@@ -143,8 +150,17 @@ export class Home extends Phaser.Scene {
         }
         if (this.isLeaving) {
             // 遷移中は操作を受け付けず、キャラクターだけ地面まで落下させる
+            const wasGrounded = this.isGrounded;
             this.velocityY += this.gravity * deltaSeconds;
             this.character.y = Math.min(this.character.y + this.velocityY * deltaSeconds, this.characterBaseY);
+            if (this.character.y >= this.characterBaseY) {
+                this.velocityY = 0;
+                this.isGrounded = true;
+                if (!wasGrounded) {
+                    this.sound.stopByKey('jumpAir');
+                    this.sound.play('jumpLand');
+                }
+            }
             return;
         }
         this.run(deltaSeconds);
@@ -152,6 +168,8 @@ export class Home extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey) && this.isGrounded) {
             this.velocityY = -this.jumpSpeed;
             this.isGrounded = false;
+            this.sound.play('jumpTakeoff');
+            this.sound.play('jumpAir');
         }
 
         const halfHeight = this.character.displayHeight / 2;
@@ -169,6 +187,8 @@ export class Home extends Phaser.Scene {
                 prevHeadTopY >= blockBounds.bottom &&
                 this.character.y - halfHeight <= blockBounds.bottom;
             if (overlapsX && hitsFromBelow) {
+                this.sound.stopByKey('jumpAir');
+                this.sound.play('blockHit');
                 // 通常のブロックと同じ：頭がブロックの下面で止まり、上向きの速度を失って落ちる
                 this.character.y = blockBounds.bottom + halfHeight;
                 this.velocityY = 0;
@@ -192,6 +212,10 @@ export class Home extends Phaser.Scene {
 
         // 地面への着地
         if (this.character.y >= this.characterBaseY) {
+            if (!this.isGrounded) {
+                this.sound.stopByKey('jumpAir');
+                this.sound.play('jumpLand');
+            }
             this.character.y = this.characterBaseY;
             this.velocityY = 0;
             this.isGrounded = true;

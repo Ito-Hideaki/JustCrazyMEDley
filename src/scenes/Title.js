@@ -22,7 +22,7 @@ export class Title extends Phaser.Scene {
         this.logo.scale = 0.4;
 
         this.options = [
-            { label: 'はじめから', scene: 'Home', y: 400 },
+            { label: 'はじめから（初めての方）', scene: 'Tutorial', y: 400 },
             { label: 'つづきから（ふっかつのじゅもん）', scene: 'Spell', y: 520 },
         ];
         this.options.forEach((option, i) => {

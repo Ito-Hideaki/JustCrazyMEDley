@@ -1,6 +1,6 @@
-import { SPELL_CHARS, SPELL_COLUMNS, SPELL_LENGTH, decodeSpell } from '../saveData.js';
+import { SPELL_COLUMNS, SPELL_LENGTH, decodeSpell } from '../saveData.js';
 
-// ふっかつのじゅもんを入力する画面。文字表と、その下のコマンド行をキーボードで選ぶ
+// ふっかつのじゅもんを入力する画面。文字表とキーボード入力の両方に対応する
 export class Spell extends Phaser.Scene {
 
     constructor() {
@@ -17,18 +17,42 @@ export class Spell extends Phaser.Scene {
             color: '#ffffff'
         }).setOrigin(0.5);
 
-        this.spellText = this.add.text(centerX, 150, '', {
-            fontSize: '56px',
+        this.spellInput = this.add.dom(centerX, 150).createElement('input', {
+            width: '900px',
+            height: '72px',
+            padding: '0 12px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: '2px solid #ffff66',
+            outline: 'none',
             color: '#ffff66',
-            fontFamily: 'monospace'
-        }).setOrigin(0.5);
+            font: '48px monospace',
+            textAlign: 'center',
+            pointerEvents: 'none'
+        });
+        this.spellInput.node.type = 'text';
+        this.spellInput.node.maxLength = SPELL_LENGTH;
+        this.spellInput.node.autocomplete = 'off';
+        this.spellInput.node.autocapitalize = 'off';
+        this.spellInput.node.placeholder = 'ここに入力';
+        this.spellInput.node.setAttribute('aria-label', 'ふっかつのじゅもん');
+        this.spellInput.addListener('input keydown');
+        this.spellInput.on('input', event => {
+            this.entered = Array.from(this.normalizeKana(event.target.value)).slice(0, SPELL_LENGTH);
+            this.messageText.setText('');
+        });
+        this.spellInput.on('keydown', event => {
+            if (event.code === 'Space' && !event.isComposing) {
+                event.preventDefault();
+            }
+        });
 
         this.messageText = this.add.text(centerX, 215, '', {
             fontSize: '32px',
             color: '#ff6666'
         }).setOrigin(0.5);
 
-        this.add.text(centerX, 695, '矢印キーで移動　Enter / Space で決定　Backspace で1文字消す', {
+        this.add.text(centerX, 695, 'そのまま入力　Enter / Space 決定　Esc で文字選択　I で入力に戻る', {
             fontSize: '24px',
             color: '#aaaaaa'
         }).setOrigin(0.5);
@@ -37,6 +61,7 @@ export class Spell extends Phaser.Scene {
         const cell = 64;
         const rowCount = 5;
         const startX = centerX - (SPELL_COLUMNS.length * cell) / 2 + cell / 2;
+        this.buttonActions = new Map();
         this.fieldRows = Array.from({ length: rowCount }, () => []);
         SPELL_COLUMNS.forEach((column, col) => {
             [...column].forEach((ch, row) => {
@@ -60,26 +85,51 @@ export class Spell extends Phaser.Scene {
         this.cursorCol = 0;
 
         const keyboard = this.input.keyboard;
-        keyboard.on('keydown-LEFT', () => this.moveCursor(0, -1));
-        keyboard.on('keydown-RIGHT', () => this.moveCursor(0, 1));
-        keyboard.on('keydown-UP', () => this.moveCursor(-1, 0));
-        keyboard.on('keydown-DOWN', () => this.moveCursor(1, 0));
-        keyboard.on('keydown-ENTER', () => this.activateCursor());
-        keyboard.on('keydown-SPACE', () => this.activateCursor());
-        keyboard.on('keydown-BACKSPACE', () => this.removeChar());
-        // ひらがな・カタカナの直接入力にも対応する
-        keyboard.on('keydown', event => {
-            if (event.key.length !== 1) {
-                return;
+        keyboard.on('keydown-LEFT', () => {
+            if (!this.isSpellInputFocused()) this.moveCursor(0, -1);
+        });
+        keyboard.on('keydown-RIGHT', () => {
+            if (!this.isSpellInputFocused()) this.moveCursor(0, 1);
+        });
+        keyboard.on('keydown-UP', () => {
+            if (!this.isSpellInputFocused()) this.moveCursor(-1, 0);
+        });
+        keyboard.on('keydown-DOWN', () => {
+            if (!this.isSpellInputFocused()) this.moveCursor(1, 0);
+        });
+        keyboard.on('keydown-ENTER', event => {
+            if (this.isSpellInputFocused()) {
+                if (!event.isComposing) this.submit();
+            } else {
+                this.activateCursor();
             }
-            const ch = event.key.replace(/[\u30a1-\u30f6]/, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
-            if (SPELL_CHARS.includes(ch)) {
-                this.addChar(ch);
+        });
+        keyboard.on('keydown-SPACE', event => {
+            if (this.isSpellInputFocused()) {
+                if (!event.isComposing) this.submit();
+            } else {
+                this.activateCursor();
+            }
+        });
+        keyboard.on('keydown-ESC', () => {
+            if (this.isSpellInputFocused()) {
+                this.spellInput.node.blur();
+            }
+        });
+        keyboard.on('keydown-I', () => {
+            if (!this.isSpellInputFocused()) {
+                this.spellInput.node.focus();
+            }
+        });
+        keyboard.on('keydown-BACKSPACE', () => {
+            if (!this.isSpellInputFocused()) {
+                this.removeChar();
             }
         });
 
         this.refresh();
         this.updateCursor();
+        this.spellInput.node.focus();
     }
 
     createButton(x, y, label, fontSize, padding, onClick) {
@@ -88,8 +138,8 @@ export class Spell extends Phaser.Scene {
             color: '#ffffff',
             backgroundColor: '#333333',
             padding
-        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        button.on('pointerdown', onClick);
+        }).setOrigin(0.5);
+        this.buttonActions.set(button, onClick);
         return button;
     }
 
@@ -121,7 +171,17 @@ export class Spell extends Phaser.Scene {
     }
 
     activateCursor() {
-        this.fieldRows[this.cursorRow][this.cursorCol].emit('pointerdown');
+        const action = this.buttonActions.get(this.fieldRows[this.cursorRow][this.cursorCol]);
+        action();
+    }
+
+    isSpellInputFocused() {
+        return document.activeElement === this.spellInput.node;
+    }
+
+    normalizeKana(text) {
+        return text.normalize('NFC').replace(/[\u30a1-\u30f6]/g, ch =>
+            String.fromCharCode(ch.charCodeAt(0) - 0x60));
     }
 
     addChar(ch) {
@@ -139,8 +199,7 @@ export class Spell extends Phaser.Scene {
     }
 
     refresh() {
-        const slots = Array.from({ length: SPELL_LENGTH }, (_, i) => this.entered[i] ?? '・');
-        this.spellText.setText(slots.join(' '));
+        this.spellInput.node.value = this.entered.join('');
     }
 
     submit() {
