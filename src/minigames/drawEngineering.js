@@ -1,4 +1,4 @@
-import { gaugePosition, phasePosition } from './engineering.js';
+import { gaugePosition } from './engineering.js';
 
 const SYMBOL = { ArrowUp: '↑', ArrowRight: '→', ArrowDown: '↓', ArrowLeft: '←' };
 const COLORS = { ArrowUp: 0x80cffa, ArrowRight: 0xffd56f, ArrowDown: 0xb69aff, ArrowLeft: 0xff8d92 };
@@ -28,20 +28,175 @@ export function drawMicrogame(scene, s) {
             const goal = target && target[0] === x && target[1] === y;
             box(cx, cy, 100, 72, danger ? 0x8f394c : goal ? 0x3a846e : 0x2e425c);
             if (danger) ink(cx, cy, '×', 35, '#ffb5b5');
-            if (goal && s.id !== 'wire') ink(cx, cy, s.id === 'scope' ? '◆' : '◎', 38, '#ffdd88');
+            if (goal && !['wire','robot','crane'].includes(s.id)) ink(cx, cy, '◎', 38, '#ffdd88');
             if(goal) g.lineStyle(3,0xffdc66,0.35+pulse*0.6).strokeCircle(cx,cy,30+pulse*8);
         }
         if(cursor) {
             const cx=smooth('gx',startX+cursor[0]*gap),cy=smooth('gy',startY+cursor[1]*96);
             g.lineStyle(4,0xffffff).strokeRect(cx-46,cy-32,92,64);
             if(s.id==='solder') { line(cx+20,cy-12,cx+54,cy-43,0xc4dfeb,8); line(cx+54,cy-43,cx+69,cy-57,0xffb45c,14); }
-            if(s.id==='scope') { g.lineStyle(3,0xb7efff).strokeCircle(cx,cy,31); line(cx+24,cy+24,cx+42,cy+42,0xb7efff,7); }
         }
         return [startX, startY, gap];
     };
     switch (s.id) {
-        case 'bolt': case 'mix': {
-            ink(520, 292, s.id === 'bolt' ? '時計回りに締める！' : '実験レシピ', 25, '#ffdd88');
+        case 'launch': {
+            const landing=360+s.aim*100, target=360+s.target*100;
+            ink(520,280,'点線の着地点を旗に合わせて発射！',25,'#ffdd88');
+            line(160,510,880,510,0x8ae3b1,4);
+            box(190,490,80,45,0x97b1c4); line(190,480,225,453,0xffb45c,15);
+            box(target,508,75,18,0x8ae3b1);line(target,506,target,440,0xffffff,3);ink(target+12,430,'旗',24,'#ffdd88');
+            const flight=(t)=>[205+(landing-205)*t,480-150*Math.sin(Math.PI*t)];
+            for(let i=1;i<=18;i++) {const [x,y]=flight(i/18);circle(x,y,3,0xa6c5d7);}
+            const progress=s.flying?Math.min(1,(s.elapsed-s.flightAt)/0.65):0;
+            const [x,y]=flight(progress);circle(x,y,16,0xffdd88);circle(x-4,y-4,5,0xfff3c9);
+            ink(520,559,s.flying?'ボールが飛んでいる！':'← →：飛距離を変える　SPACE：発射',23);
+            break;
+        }
+        case 'lightning': {
+            const active=s.events.some(event=>!event.protected && s.elapsed>=event.at && s.elapsed<=event.at+s.window);
+            const shield=s.events.some(event=>event.protected && s.elapsed-event.at<0.65);
+            for(let i=0;i<3;i++)circle(460+i*65,355+(i===1?-18:0),60,active?0x7a6a39:0x62748a);
+            box(520,475,210,70,0x334964);ink(520,475,'実験装置',24);
+            if(active){line(535,370,500,410,0xffdd55,12);line(500,410,545,408,0xffdd55,12);line(545,408,510,451,0xffdd55,12);}
+            if(shield){g.lineStyle(9,0x8ae3b1).strokeCircle(520,469,125);ink(520,389,'守った！',27,'#8ae3b1');}
+            ink(520,280,active?'雷！ SPACEで守れ！':shield?'ガード成功！':'晴れている間は待とう…',30,active?'#ffdd55':'#ffffff');
+            ink(520,559,`守った回数 ${s.count} / 2`,25,'#8ae3b1');
+            break;
+        }
+        case 'memory': {
+            const watching=s.elapsed<s.showFor, slot=Math.floor(s.elapsed/0.42);
+            ink(520,280,watching?'見るだけ！ 点滅の順番を覚えよう':'入力！ 覚えた順に矢印を押そう',26,'#ffdd88');
+            const arrows=['ArrowLeft','ArrowUp','ArrowDown','ArrowRight'];
+            arrows.forEach((key,i)=> {const x=280+i*160,lit=watching&&slot<s.sequence.length&&s.sequence[slot]===key&&s.elapsed%0.42<0.32;box(x,415,110,105,lit?COLORS[key]:0x30435b);ink(x,414,SYMBOL[key],48,lit?'#14283f':'#93a8bf');if(lit)g.lineStyle(4,0xffffff).strokeCircle(x,415,65);});
+            ink(520,553,watching?'まだ押さなくていいよ':`${'✓ '.repeat(s.count)}${'□ '.repeat(s.sequence.length-s.count)}`,30,'#8ae3b1');
+            break;
+        }
+        case 'thermal': {
+            ink(520,280,'↑で温める・↓で冷やす　緑をキープ！',25,'#ffdd88');
+            g.lineStyle(4,0xd7efff).strokeRect(290,350,225,170);
+            g.fillStyle(0xb69aff,0.65).fillRect(295,430,215,85);
+            for(let i=0;i<5;i++)circle(320+i*39,510-((clock*34+i*19)%74),5,0xd8b6ff);
+            for(let i=0;i<3;i++)g.fillStyle(0xffb45c).fillTriangle(325+i*63,542,340+i*63,517-Math.sin(clock*7+i)*9,355+i*63,542);
+            box(745,420,65,220,0x334964);
+            g.fillStyle(0x8ae3b1,0.45).fillRect(712,530-(0.5+s.band)*220,66,s.band*440);
+            const y=530-s.temperature*220;line(690,y,800,y,0xffdd88,7);ink(830,y,'◀',27,'#ffdd88');
+            box(520,560,450,13,0x334964);g.fillStyle(0x8ae3b1).fillRect(295,553,450*Math.min(1,s.stableFor/1.5),13);
+            ink(520,588,`キープ ${s.stableFor.toFixed(1)} / 1.5秒`,20);
+            break;
+        }
+        case 'microbes': {
+            g.fillStyle(0x183b43).fillCircle(430,427,130);g.lineStyle(5,0x9de2de).strokeCircle(430,427,130);
+            for(let i=0;i<s.target;i++){
+                const angle=i*Math.PI*2/s.target+clock*0.12, r=78+Math.sin(clock*1.2+i)*12;
+                const x=430+Math.cos(angle)*r,y=427+Math.sin(angle)*r;
+                box(x,y,42,27,0x8ae3b1);circle(x+8,y-3,3,0x14283f);line(x-20,y,x-29,y+Math.sin(clock*8+i)*7,0x8ae3b1,3);
+            }
+            ink(520,280,'緑の生き物は何匹？ 動いているよ！',25,'#ffdd88');
+            box(760,423,130,130,0x334964);ink(760,413,`${s.answer}`,60);ink(760,515,'↑ ↓ で選ぶ',22);
+            ink(520,578,'数えたら SPACEで回答！',24);
+            break;
+        }
+        case 'magnetmaze': {
+            box(520,430,760,285,0x223b48);
+            g.lineStyle(3,0x8ae3b1).strokeRoundedRect(180,285,680,255,8);
+            box(520,462,200,195,0x92576a);ink(520,450,'壁',34,'#ffd2d2');
+            circle(s.target[0],s.target[1],s.goalRadius,0x3a846e);ink(s.target[0],s.target[1],'旗',27,'#ffdd88');
+            for(let i=0;i<6;i++)line(310+i*70,321,332+i*70,321,0x608b99,3);
+            circle(s.x,s.y,16,0xc3dae5);circle(s.x-5,s.y-5,5,0xffffff);
+            if(s.heading)ink(s.x,s.y-32,s.heading[0]>0?'→':s.heading[0]<0?'←':s.heading[1]<0?'↑':'↓',25,'#ffdd88');
+            ink(520,268,'矢印で進む向きを変える。SPACEで止まる！',22,'#ffdd88');
+            ink(520,586,'赤い壁を回って旗へ！ 玉は自動で進むよ',22);
+            break;
+        }
+        case 'crane': {
+            grid(3,2,s.carrying?s.target:s.pickup,[s.x,s.y]);
+            const x=smooth('hookX',365+s.x*155), y=smooth('hookY',370+s.y*96);
+            line(x,265,x,y-20,0xc8e4ed,4);
+            g.lineStyle(5,0xffdd88).strokeCircle(x,y-10,12);
+            if(s.carrying) { box(x,y+17,52,40,0xffb45c); ink(x,y+17,'荷物',16,'#13283a'); }
+            else { box(365+s.pickup[0]*155,370+s.pickup[1]*96,52,40,0xffb45c); ink(365+s.pickup[0]*155,370+s.pickup[1]*96,'荷物',16,'#13283a'); }
+            ink(365+s.target[0]*155,370+s.target[1]*96,'旗',24,'#ffdd88');
+            ink(520,555,s.carrying?'旗のマスへ運んで SPACE！':'荷物のマスで SPACE！',25,'#ffdd88');
+            break;
+        }
+        case 'bulb': {
+            ink(520,283,`暗い電球を直そう：${s.count} / 2`,27,'#ffdd88');
+            for(let i=0;i<3;i++) {
+                const x=300+i*220, dark=i===(s.targets[s.count]??-1);
+                if(!dark) { circle(x,390,65+pulse*7,0x635c30); for(let j=0;j<8;j++) {const a=j*Math.PI/4; line(x+Math.cos(a)*52,390+Math.sin(a)*52,x+Math.cos(a)*68,390+Math.sin(a)*68,0xffdd88,3);} }
+                circle(x,390,42,dark?0x465164:0xffdd88); box(x,447,46,30,0x97b1c4);
+                ink(x,390,dark?'消灯':'点灯',20,dark?'#a6b6ce':'#14283f');
+                if(i===s.cursor) g.lineStyle(4,0xffffff).strokeRoundedRect(x-85,317,170,160,14);
+            }
+            ink(520,553,'白枠を暗い電球へ → SPACE',25);
+            break;
+        }
+        case 'charge': {
+            ink(520,284,s.charging?'緑に来たら SPACEで止める！':'SPACEで充電スタート！',29,'#ffdd88');
+            g.lineStyle(6,0xc8e4ed).strokeRoundedRect(220,345,600,120,12);
+            box(835,405,25,52,0xc8e4ed);
+            g.fillStyle(0x78c9ed,0.8).fillRect(226,351,588*Math.min(1,s.charge),108);
+            g.fillStyle(0x8ae3b1,0.3).fillRect(226+588*(s.target-s.width),351,1176*s.width,108);
+            g.lineStyle(4,0x8ae3b1).strokeRect(226+588*(s.target-s.width),348,1176*s.width,114);
+            ink(520,405,`${Math.round(s.charge*100)}%`,42,'#ffffff');
+            if(s.charging) ink(520,511,'⚡ 充電中 ⚡',27,'#ffdd88');
+            break;
+        }
+        case 'chip': {
+            ink(400,284,'お手本のしるし →',25,'#ffdd88');
+            const chip=(x,y,size,orientation)=> {
+                box(x,y,size,size,0x253340);
+                for(let i=-1;i<=1;i++) { line(x-size/2-12,y+i*size/4,x+size/2+12,y+i*size/4,0x97b1c4,4); line(x+i*size/4,y-size/2-12,x+i*size/4,y+size/2+12,0x97b1c4,4); }
+                box(x,y,size,size,0x253340);
+                const a=orientation*Math.PI/2-Math.PI/2;
+                circle(x+Math.cos(a)*size*0.37,y+Math.sin(a)*size*0.37,size*0.09,0xffdd88);
+            };
+            chip(675,287,55,s.target); chip(520,438,140,s.orientation);
+            ink(520,557,'← → で回す　金色が同じ向きなら SPACE',23);
+            break;
+        }
+        case 'led': {
+            ink(520,280,'上の光と同じにしよう！',26,'#ffdd88');
+            for(let i=0;i<4;i++) {
+                const x=280+i*160;
+                circle(x,345,32,s.target[i]?0xffdd88:0x324052);
+                ink(x,345,s.target[i]?'ON':'OFF',17,s.target[i]?'#14283f':'#bac8d8');
+                box(x,463,100,105,s.bits[i]?0x6f6937:0x334964);
+                circle(x,455,26,s.bits[i]?0xffdd88:0x19283a);
+                if(s.bits[i]) g.lineStyle(3,0xffdd88,0.3+pulse*0.4).strokeCircle(x,455,33+pulse*5);
+                if(i===s.cursor) g.lineStyle(4,0xffffff).strokeRect(x-54,407,108,112);
+            }
+            ink(520,557,'← →：白枠　SPACE：つける・消す',23);
+            break;
+        }
+        case 'files': {
+            const keep=!!s.items[s.count];
+            ink(520,280,`${s.count} / ${s.items.length} ファイル整理`,26,'#ffdd88');
+            box(520,400,180,150,keep?0x357c9d:0xa04961);
+            ink(520,377,keep?'保存':'ゴミ箱',37);
+            ink(520,431,keep?'卒論データ':'不要なコピー',22);
+            box(260,470,170,75,0x357c9d); ink(260,470,'← 保存',26);
+            box(780,470,170,75,0xa04961); ink(780,470,'ゴミ箱 →',26);
+            ink(520,558,'青は左へ、赤は右へ！',27,'#ffdd88');
+            break;
+        }
+        case 'robot': {
+            const [x0,y0,gap]=grid(3,3,s.target,null);
+            const x=smooth('rx',x0+s.x*gap),y=smooth('ry',y0+s.y*96);
+            box(x,y,56,54,0x8ae3b1); ink(x,y,['↑','→','↓','←'][s.orientation],35,'#14283f');
+            ink(x0+s.target[0]*gap,y0+s.target[1]*96,'旗',23,'#ffdd88');
+            ink(520,570,'← →：向きを回す　SPACE：1マス前へ',22);
+            break;
+        }
+        case 'molecule': {
+            const colors=[0xff8d92,0x80cffa,0xffd56f],names=['赤','青','黄'];
+            ink(520,278,'上の玉を左からつなごう！',26,'#ffdd88');
+            s.recipe.forEach((color,i)=>{ const x=380+i*140; if(i) line(x-100,350,x-40,350,0xc8e4ed,7); circle(x,350,32,colors[color]); ink(x,350,i<s.count?'✓':names[color],22,'#14283f'); if(i===s.count) g.lineStyle(4,0xffffff).strokeCircle(x,350,40+pulse*4); });
+            colors.forEach((color,i)=> { const x=300+i*220; box(x,485,150,92,s.cursor===i?0x587a88:0x334964); circle(x,485,28,color); ink(x,485,names[i],20,'#14283f'); });
+            break;
+        }
+        case 'bolt': {
+            ink(520, 292, '時計回りに締める！', 25, '#ffdd88');
             s.sequence.forEach((key, i) => {
                 const x = 520 + (i - (s.sequence.length - 1) / 2) * 94;
                 box(x, 410, 78, 85, i < s.count ? 0x315947 : COLORS[key]);
@@ -52,15 +207,9 @@ export function drawMicrogame(scene, s) {
                 }
             });
             ink(810, 550, `${s.count} / ${s.sequence.length}`, 25);
-            if(s.id==='bolt') {
-                circle(400,550,28,0xadc5d6); circle(400,550,11,0x1a2940);
-                const a=s.count*Math.PI/2+Math.sin(clock*3)*0.08;
-                line(400,550,400+Math.cos(a)*85,550+Math.sin(a)*25,0xffb45c,14);
-            } else {
-                for(let i=0;i<5;i++) circle(400+i*35,558-((clock*28+i*13)%42),5+i%3,[0x80cffa,0xffd56f,0xb69aff,0xff8d92][i%4]);
-                g.lineStyle(3,0xc7eeff).strokeRect(370,515,185,67);
-                g.fillStyle(0xb69aff,0.4).fillRect(374,552-s.count*3,177,26+s.count*3);
-            }
+            circle(400,550,28,0xadc5d6); circle(400,550,11,0x1a2940);
+            const a=s.count*Math.PI/2+Math.sin(clock*3)*0.08;
+            line(400,550,400+Math.cos(a)*85,550+Math.sin(a)*25,0xffb45c,14);
             break;
         }
         case 'catch': case 'packet': {
@@ -121,36 +270,11 @@ export function drawMicrogame(scene, s) {
             ink(520, 550, '↑ 上げる     ↓ 下げる     SPACE 確定', 23);
             break;
         }
-        case 'phase': {
-            box(520, 414, 710, 180 * s.phaseWindow, 0x315947);
-            line(165, 414, 875, 414, 0x8ae3b1, 2);
-            for (let i = 1; i <= 140; i++) {
-                const shift = s.elapsed * (2.2 + s.tier * 0.15) * (s.motionScale ?? 1) + (s.phaseOffset ?? Math.PI / 2);
-                const a = (i - 1) / 140 * Math.PI * 4 + shift, b = i / 140 * Math.PI * 4 + shift;
-                line(170 + (i - 1) * 5, 414 - Math.sin(a) * 90, 170 + i * 5, 414 - Math.sin(b) * 90, 0x78c9ed, 3);
-            }
-            circle(520, 414 - phasePosition(s) * 90, 15, 0xffdd88);
-            ink(520, 280, '黄色い丸を緑の帯で止めよう！', 27, '#ffdd88');
-            ink(520, 557, '黄色の光点を見て SPACE', 24);
-            break;
-        }
         case 'solder': {
             const target = s.targets[s.count] ?? s.targets[2];
             grid(3, 2, target, [s.x, s.y]);
             ink(520, 283, `光るパッドを接続：${s.count} / 3`, 27, '#ffdd88');
             ink(520, 555, '白枠がこて。緑のパッドへ移動！', 23);
-            break;
-        }
-        case 'polarity': {
-            ink(520, 287, `基板の表示：${s.target === 0 ? '＋     −' : '−     ＋'}`, 34, '#ffdd88');
-            for (let i = 0; i < 2; i++) {
-                const x = 360 + i * 320;
-                box(x, 424, 230, 130, s.cursor === i ? 0x497c8a : 0x334964);
-                circle(x, 400, 34, 0x78c9ed);
-                line(x - 20, 426, x - 20, 465, 0xffffff, 4);
-                line(x + 20, 426, x + 20, 465, 0xffffff, 4);
-                ink(x, 520, i === 0 ? '← ＋ −' : '− ＋ →', 30);
-            }
             break;
         }
         case 'logic': {
@@ -196,10 +320,6 @@ export function drawMicrogame(scene, s) {
             ink(520, 568, '多すぎたら ↓ で戻せるよ。↑ で完成！', 24);
             break;
         }
-        case 'scope': {
-            grid(5, 3, s.target, [s.x, s.y]);
-            ink(520, 563, '白枠を結晶 ◆ に合わせて撮影！', 24, '#ffdd88');
-            break;
-        }
+
     }
 }

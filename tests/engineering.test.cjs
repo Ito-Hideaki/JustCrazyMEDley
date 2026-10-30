@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const context = vm.createContext({});
 const src = fs.readFileSync(require('node:path').join(__dirname, '../src/minigames/engineering.js'), 'utf8').replace(/export /g, '');
-vm.runInContext(src + '\nglobalThis.rules = {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,phasePosition,logicAnswer,demoKey,createDemoGame,getFinalDifficulty};', context);
-const {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,phasePosition,logicAnswer,demoKey,createDemoGame,getFinalDifficulty} = context.rules;
+vm.runInContext(src + '\nglobalThis.rules = {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,logicAnswer,demoKey,createDemoGame,getFinalDifficulty};', context);
+const {GAMES,makeDeck,createGame,advanceGame,pressGame,gaugePosition,logicAnswer,demoKey,createDemoGame,getFinalDifficulty} = context.rules;
 const rng = seed => () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
 function solve(s) {
     const press = key => pressGame(s, key, s.elapsed);
@@ -14,18 +14,25 @@ function solve(s) {
         while(s.y < y) press('ArrowDown'); while(s.y > y) press('ArrowUp');
     };
     switch(s.id) {
-        case 'bolt': case 'mix': s.sequence.forEach(press); break;
+        case 'crane': case 'launch': case 'bulb': case 'charge': case 'chip': case 'led': case 'files': case 'robot': case 'molecule': case 'magnetmaze': case 'thermal': case 'memory': case 'lightning': case 'microbes': {
+            let next=0;
+            for(let t=0;t<s.duration && s.result===null;t+=0.03) {
+                advanceGame(s,t);
+                if(s.result===null && t>=next) { const key=demoKey(s); if(key) { pressGame(s,key,t); next=t+0.15; } }
+            }
+            break;
+        }
+        case 'bolt': s.sequence.forEach(press); break;
         case 'catch': while(s.cursor !== s.target) press(s.cursor < s.target ? 'ArrowRight' : 'ArrowLeft'); advanceGame(s,s.impact); break;
-        case 'lathe': case 'phase':
+        case 'lathe':
             for(let t = 0; t < s.duration; t += 0.005) {
                 advanceGame(s,t);
-                if(s.id === 'lathe' ? Math.abs(gaugePosition(s)-s.target) < s.width : Math.abs(phasePosition(s)) < 0.25) { press('Space'); break; }
+                if(Math.abs(gaugePosition(s)-s.target) < s.width) { press('Space'); break; }
             }
             break;
         case 'wire': ['ArrowUp','ArrowRight','ArrowRight','ArrowRight','ArrowRight','ArrowDown'].forEach(press); break;
         case 'voltage': for(let i=0;i<s.target;i++) press('ArrowUp'); press('Space'); break;
         case 'solder': for(const [x,y] of s.targets) { move(x,y); press('Space'); } break;
-        case 'polarity': press(s.target === 0 ? 'ArrowLeft' : 'ArrowRight'); press('Space'); break;
         case 'logic': press(logicAnswer(s) === 0 ? 'ArrowLeft' : 'ArrowRight'); press('Space'); break;
         case 'debug': for(let i=0;i<s.target;i++) press('ArrowRight'); press('Space'); break;
         case 'sort':
@@ -41,17 +48,16 @@ function solve(s) {
             }
             advanceGame(s,s.surviveUntil); break;
         case 'titrate': for(let i=0;i<s.target;i++) press('Space'); press('ArrowUp'); break;
-        case 'scope': move(...s.target); press('Space'); break;
     }
 }
-test('deck covers all 15 games and all five departments in each block', () => {
+test('deck covers all 25 games and all five departments in each block', () => {
     for(let seed=1;seed<60;seed++) {
         const deck = makeDeck(rng(seed));
-        assert.equal(new Set(deck).size,15);
-        for(let i=0;i<15;i+=5) assert.equal(new Set(deck.slice(i,i+5).map(id=>GAMES.find(g=>g.id===id).dept)).size,5);
+        assert.equal(new Set(deck).size,25);
+        for(let i=0;i<GAMES.length;i+=5) assert.equal(new Set(deck.slice(i,i+5).map(id=>GAMES.find(g=>g.id===id).dept)).size,5);
     }
 });
-test('all 15 games are solvable across variants and difficulty tiers', () => {
+test('all 25 games are solvable across variants and difficulty tiers', () => {
     for(const game of GAMES) for(let tier=0;tier<3;tier++) for(let seed=1;seed<=30;seed++) {
         const state = createGame(game.id,tier,rng(seed));
         solve(state);
@@ -72,7 +78,6 @@ test('wrong inputs give helpful retries instead of instant losses', () => {
     const bolt=createGame('bolt'); pressGame(bolt,'ArrowLeft'); assert.equal(bolt.result,null); assert.ok(bolt.feedback);
     const wire=createGame('wire'); pressGame(wire,'ArrowRight'); pressGame(wire,'ArrowRight'); assert.equal(wire.result,null); assert.equal(wire.x,1);
     const solder=createGame('solder',0,rng(1)); solder.x=(solder.targets[0][0]+1)%3; pressGame(solder,'Space'); assert.equal(solder.result,null);
-    const polarity=createGame('polarity'); pressGame(polarity,'Space'); assert.equal(polarity.result,null); solve(polarity); assert.equal(polarity.result,true);
     const titrate=createGame('titrate'); for(let i=0;i<=titrate.target;i++) pressGame(titrate,'Space'); pressGame(titrate,'ArrowUp'); assert.equal(titrate.result,null);
     pressGame(titrate,'ArrowDown'); pressGame(titrate,'ArrowUp'); assert.equal(titrate.result,true);
 });
@@ -92,15 +97,7 @@ test('animated examples solve every game using the same rules as the player', ()
 });
 
 test('every demo has a different puzzle and leaves the live round untouched', () => {
-    const signature = s => JSON.stringify(
-        s.id==='bolt'||s.id==='mix' ? s.sequence :
-        s.id==='wire' ? s.blocks :
-        s.id==='phase' ? s.phaseOffset ?? Math.PI/2 :
-        s.id==='solder' ? s.targets :
-        s.id==='logic' ? [s.a,s.b,logicAnswer(s)] :
-        s.id==='sort' ? s.values :
-        s.id==='packet' ? [s.cursor,s.obstacles.map(o=>o.lane)] : s.target
-    );
+    const signature = s => JSON.stringify(['sequence','target','targets','blocks','phaseOffset','balance','items','recipe','values','obstacles','pickup','cursor','a','b','temperature','events'].map(key=>s[key]));
     for(const game of GAMES) for(let tier=0;tier<3;tier++) for(let seed=1;seed<=30;seed++) {
         const live=createGame(game.id,tier,rng(seed));
         const before=JSON.stringify(live);
@@ -158,4 +155,45 @@ test('all games and their separate demos stay solvable from 150 through 200 tang
         }
         assert.equal(demo.result,true,`${game.id} demo at ${total}, tier ${tier}, seed ${seed}`);
     }
+});
+
+test('new games give recoverable mistakes and require the actual objective', () => {
+    const crane=createGame('crane'); pressGame(crane,'Space'); assert.equal(crane.carrying,false); assert.equal(crane.result,null);
+    const battery=createGame('charge'); pressGame(battery,'Space',0); pressGame(battery,'Space',0.1); assert.equal(battery.result,null); assert.equal(battery.charge,0);
+    const robot=createGame('robot'); const x=robot.x,y=robot.y; pressGame(robot,'ArrowLeft'); assert.equal(robot.x,x); assert.equal(robot.y,y); pressGame(robot,'Space'); assert.notDeepEqual([robot.x,robot.y],[x,y]);
+    const files=createGame('files'); pressGame(files,'ArrowRight'); assert.equal(files.count,0); assert.ok(files.feedback); pressGame(files,'ArrowLeft'); assert.equal(files.count,1);
+});
+
+test('short timers keep all scheduled objectives reachable before their deadlines', () => {
+    for(let total=150;total<=200;total++) for(let tier=0;tier<3;tier++) {
+        const difficulty=getFinalDifficulty(saveWithTotal(total));
+        const catchGame=createGame('catch',tier,rng(1),difficulty);
+        assert.ok(catchGame.impact<catchGame.duration);
+        const packet=createGame('packet',tier,rng(1),difficulty);
+        assert.ok(packet.surviveUntil<packet.duration);
+        assert.ok(packet.obstacles.at(-1).at<packet.surviveUntil);
+    }
+    assert.ok(Math.abs(createGame('voltage',0,rng(1),getFinalDifficulty(saveWithTotal(150))).duration-4.55)<0.00001);
+    assert.equal(createGame('voltage',0,rng(1),getFinalDifficulty(saveWithTotal(200))).duration,7);
+});
+
+test('replacement games require different actions rather than matching a visible target', () => {
+    const removed=['mix','phase','balance','polarity','scope','magnet'];
+    assert.ok(removed.every(id=>!GAMES.some(game=>game.id===id)));
+    const shot=createGame('launch'); shot.aim=shot.target; pressGame(shot,'Space',0);
+    assert.equal(shot.result,null); const aim=shot.aim; pressGame(shot,'ArrowLeft',0.1); assert.equal(shot.aim,aim);
+    advanceGame(shot,0.66); assert.equal(shot.result,true);
+    const lateShot=createGame('launch');lateShot.aim=lateShot.target;pressGame(lateShot,'Space',lateShot.duration-0.1);advanceGame(lateShot,lateShot.duration+1);assert.equal(lateShot.result,false);
+    const recall=createGame('memory',0,rng(2));pressGame(recall,recall.sequence[0],0);assert.equal(recall.count,0);
+    for(const key of recall.sequence)pressGame(recall,key,recall.showFor+0.01);assert.equal(recall.result,true);
+    const storm=createGame('lightning',0,rng(3));pressGame(storm,'Space',0);assert.equal(storm.count,0);
+    for(const event of storm.events)pressGame(storm,'Space',event.at+0.01);assert.equal(storm.result,true);
+    const missed=createGame('lightning');advanceGame(missed,missed.events[0].at+missed.window+0.01);assert.equal(missed.result,false);
+    const furnace=createGame('thermal');advanceGame(furnace,furnace.duration);assert.equal(furnace.result,false);
+    const cells=createGame('microbes');pressGame(cells,'Space');assert.equal(cells.result,null);cells.answer=cells.target;pressGame(cells,'Space');assert.equal(cells.result,true);
+});
+test('magnetic maze moves automatically, brakes, and blocks the direct route', () => {
+    const s=createGame('magnetmaze');pressGame(s,'ArrowRight',0);advanceGame(s,1);assert.equal(s.mistakes,1);assert.equal(s.x,s.startX);
+    pressGame(s,'ArrowUp',1);advanceGame(s,1.5);assert.ok(s.y<500);
+    pressGame(s,'Space',1.5);const position=[s.x,s.y];advanceGame(s,2);assert.deepEqual([s.x,s.y],position);
 });

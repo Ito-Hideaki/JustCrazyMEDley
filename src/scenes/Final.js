@@ -1,5 +1,5 @@
 import { createEmptySaveData } from '../saveData.js';
-import { DEPARTMENTS, makeDeck, createGame, createDemoGame, getFinalDifficulty, advanceGame, pressGame, GUIDES, demoKey } from '../minigames/engineering.js';
+import { DEPARTMENTS, GAMES, makeDeck, createGame, createDemoGame, getFinalDifficulty, advanceGame, pressGame, GUIDES, demoKey } from '../minigames/engineering.js';
 import { drawMicrogame } from '../minigames/drawEngineering.js';
 
 const ALLOWED = ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight', 'Space'];
@@ -64,7 +64,7 @@ export class Final extends Phaser.Scene {
         this.overlayBody = this.text(640, 344, '', 26).setOrigin(0.5).setAlign('center').setDepth(31);
         this.overlayHint = this.text(640, 560, '', 27, '#8ae3b1').setOrigin(0.5).setDepth(31);
         this.showOverlay('高専 MICRO LAB',
-            `知識ゼロでも大丈夫！ 5つの分野で15のあそび\nまずは動くお手本。わかったらSPACEで挑戦！\n操作は矢印とSPACEだけ。4回失敗でやり直し\n取得単位 ${this.difficulty.total}/200 → 難易度：${this.difficulty.label}\n単位を多く集めるほど、時間・操作に余裕ができるよ！`,
+            `知識ゼロでも大丈夫！ 5つの分野で25のあそび\nまずは動くお手本。わかったらSPACEで挑戦！\n操作は矢印とSPACEだけ。4回失敗でやり直し\n取得単位 ${this.difficulty.total}/200 → 難易度：${this.difficulty.label}\n単位を多く集めるほど、時間・操作に余裕ができるよ！`,
             'SPACE：研究開始     ←：学科選択へ');
         this.refreshHud();
         this.input.keyboard.addCapture(['LEFT', 'DOWN', 'UP', 'RIGHT', 'SPACE']);
@@ -117,7 +117,7 @@ export class Final extends Phaser.Scene {
         this.startRound();
     }
     startRound() {
-        this.current = createGame(this.deck[this.roundIndex], Math.floor(this.roundIndex / 5), Math.random, this.difficulty);
+        this.current = createGame(this.deck[this.roundIndex], Math.floor(this.roundIndex * 3 / GAMES.length), Math.random, this.difficulty);
         const dept = DEPARTMENTS[this.current.dept];
         this.mode = 'intro';
         this.demoTemplate = createDemoGame(this.current);
@@ -142,10 +142,10 @@ export class Final extends Phaser.Scene {
         this.renderGame();
     }
     refreshHud() {
-        this.roundText.setText(`ROUND ${Math.min(this.roundIndex + 1, 15)} / 15`);
+        this.roundText.setText(`ROUND ${Math.min(this.roundIndex + 1, GAMES.length)} / ${GAMES.length}`);
         this.lifeText.setText(`残り ${'♥'.repeat(this.lives)}${'♡'.repeat(4 - this.lives)}`);
         const counts = this.departmentWins;
-        this.researchText.setText(`${this.wins} / 15 実験成功\n機械 ${counts[0]}　電気 ${counts[1]}\n電子 ${counts[2]}　情報 ${counts[3]}\n物質 ${counts[4]}`);
+        this.researchText.setText(`${this.wins} / ${GAMES.length} 実験成功\n機械 ${counts[0]}　電気 ${counts[1]}\n電子 ${counts[2]}　情報 ${counts[3]}\n物質 ${counts[4]}`);
         this.researchText.setWordWrapWidth(230);
     }
     handleKey(event) {
@@ -236,7 +236,7 @@ export class Final extends Phaser.Scene {
                 }
             }
         } else if (this.mode === 'playing') {
-            const repeatable = ['catch','packet','wire','voltage','solder','scope','sort','debug','polarity','logic'];
+            const repeatable = ['catch','packet','wire','voltage','solder','sort','debug','logic','crane','launch','bulb','chip','led','robot','molecule','thermal','microbes'];
             if (now >= this.repeatAt && this.held.size && repeatable.includes(this.current.id)) {
                 this.playInput([...this.held].at(-1)); this.repeatAt = now + 160;
             }
@@ -244,7 +244,7 @@ export class Final extends Phaser.Scene {
                 advanceGame(this.current, elapsed / 1000);
                 if (this.current.result !== null) this.finishRound();
             }
-        } else if (this.mode === 'result' && elapsed >= 1800) this.nextRound();
+        } else if (this.mode === 'result' && elapsed >= 900) this.nextRound();
         if (['intro','playing','result'].includes(this.mode)) {
             this.mascot.y = 460 + Math.sin(now / 220) * (this.mode === 'result' && this.current.result ? 13 : 3);
             const character = DEPARTMENTS[this.current.dept].character;
@@ -292,7 +292,7 @@ export class Final extends Phaser.Scene {
         this.hasSubmitted = true; this.mode = 'complete';
         const save = this.registry.get('saveData') ?? createEmptySaveData();
         save.completedCount++; this.registry.set('saveData',save);
-        this.showOverlay('卒業論文、完成！', `${this.wins} / 15 実験成功！\n5つの分野をめぐった研究が、一冊になりました。\n最後まで遊んでくれてありがとう！`, 'SPACE：エンディングへ');
+        this.showOverlay('卒業論文、完成！', `${this.wins} / ${GAMES.length} 実験成功！\n5つの分野をめぐった研究が、一冊になりました。\n最後まで遊んでくれてありがとう！`, 'SPACE：エンディングへ');
     }
     drawKeyCaps() {
         const symbols = ['←','↓','↑','→','SPACE'];

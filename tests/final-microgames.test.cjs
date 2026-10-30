@@ -28,7 +28,7 @@ function fixture(save) {
     scene.create();
     return { scene, api: context.api, setTime: value => now=value, press: (code,repeat=false) => scene.handleKey({code,repeat}) };
 }
-test('all 15 microgames render and intro/result inputs are ignored', () => {
+test('all 25 microgames render and intro/result inputs are ignored', () => {
     const {scene,api,press,setTime}=fixture();
     press('Enter'); assert.equal(scene.mode,'ready');
     press('Space'); assert.equal(scene.mode,'intro');
@@ -50,11 +50,11 @@ test('four failures lead to retry and retry resets the run', () => {
     press('Space',true); assert.equal(scene.mode,'failed');
     press('Space'); assert.equal(scene.lives,4); assert.equal(scene.roundIndex,0); assert.equal(scene.mode,'intro');
 });
-test('15 rounds complete the thesis directly and save exactly once', () => {
+test('25 rounds complete the thesis directly and save exactly once', () => {
     const {scene,press}=fixture(); press('Space');
-    for(let i=0;i<15;i++) { scene.mode='playing'; scene.current.result=true; scene.finishRound(); scene.nextRound(); }
-    assert.equal(scene.mode,'complete'); assert.equal(scene.wins,15);
-    assert.deepEqual(Array.from(scene.departmentWins),[3,3,3,3,3]);
+    for(let i=0;i<25;i++) { scene.mode='playing'; scene.current.result=true; scene.finishRound(); scene.nextRound(); }
+    assert.equal(scene.mode,'complete'); assert.equal(scene.wins,25);
+    assert.deepEqual(Array.from(scene.departmentWins),[5,5,5,5,5]);
     press('Enter'); assert.equal(scene.destination,undefined);
     assert.equal(scene.registry.save.completedCount,6);
     assert.deepEqual(scene.registry.save.stages,[30,30,30,30,30]);
