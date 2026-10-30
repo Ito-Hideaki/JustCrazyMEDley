@@ -2,8 +2,8 @@ import { IS_SCENE_DEBUG, createEmptySaveData, encodeSaveData } from '../saveData
 
 export class Joho extends Phaser.Scene {
 
-    constructor() {
-        super('Joho');
+    constructor(sceneKey = 'Joho') {
+        super(sceneKey);
     }
 
     preload() {
