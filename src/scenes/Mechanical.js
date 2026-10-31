@@ -220,9 +220,18 @@ export class Mechanical extends Phaser.Scene {
         cam.startFollow(this.characterStand, true, 0.1 , 0.1);
         cam.setFollowOffset(-300, 0);
 
-        // Pキーでステージ全体を1枚の画像として保存
         this.isCapturing = false;
-        this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P).on('down', () => this.captureWholeStage());
+        this.isForcingHome = false;
+        // バグ発生時の緊急脱出：Pキーでいつでもホームへ戻る（記録は変更しない）
+        this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P).on('down', () => this.forceReturnHome());
+    }
+
+    forceReturnHome() {
+        if (this.isForcingHome) {
+            return;
+        }
+        this.isForcingHome = true;
+        this.scene.start('Home');
     }
 
     update(time,delta) {
