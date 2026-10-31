@@ -17,7 +17,7 @@
         const pad = Math.ceil(parseInt(style.fontSize ?? 16, 10) * 0.25);
         return addText.call(this,x,y,text,{...style,padding:{top:pad,bottom:pad}});
     };
-    // Frozen rendering gallery: arrows cycle all 15 views; no save data changes.
+    // Frozen rendering gallery: arrows cycle all game views; no save data changes.
     class Preview extends Final {
         create() {
             super.create();
@@ -36,7 +36,7 @@
         handleKey(event) {
             if(event.repeat) return;
             if(event.code === 'ArrowRight' || event.code === 'ArrowLeft') {
-                this.roundIndex = (this.roundIndex + (event.code === 'ArrowRight' ? 1 : 14)) % 15;
+                this.roundIndex = (this.roundIndex + (event.code === 'ArrowRight' ? 1 : this.deck.length-1)) % this.deck.length;
                 this.showExample();
             }
         }
